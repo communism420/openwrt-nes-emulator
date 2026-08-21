@@ -1215,7 +1215,8 @@ mkdir -p \
 	"$PROJECT_SNAPSHOT/docs" \
 	"$PROJECT_SNAPSHOT/package" \
 	"$PROJECT_SNAPSHOT/scripts" \
-	"$PROJECT_SNAPSHOT/tests"
+	"$PROJECT_SNAPSHOT/tests" \
+	"$PROJECT_SNAPSHOT/upstream"
 copy_clean_source_tree "$ROOT_DIR/.github" "$PROJECT_SNAPSHOT/.github"
 copy_clean_source_tree "$ROOT_DIR/docs" "$PROJECT_SNAPSHOT/docs"
 copy_clean_source_tree \
@@ -1229,6 +1230,7 @@ copy_clean_source_tree \
 	"$PROJECT_SNAPSHOT/package/libretro-fceumm"
 copy_clean_source_tree "$ROOT_DIR/scripts" "$PROJECT_SNAPSHOT/scripts"
 copy_clean_source_tree "$ROOT_DIR/tests" "$PROJECT_SNAPSHOT/tests"
+copy_clean_source_tree "$ROOT_DIR/upstream" "$PROJECT_SNAPSHOT/upstream"
 cp -a \
 	"$ROOT_DIR/.gitattributes" \
 	"$ROOT_DIR/.gitignore" \
@@ -1240,6 +1242,7 @@ cp -a \
 	"$ROOT_DIR/README.md" \
 	"$ROOT_DIR/SECURITY.md" \
 	"$ROOT_DIR/THIRD_PARTY_NOTICES.md" \
+	"$ROOT_DIR/UPSTREAMING.md" \
 	"$ROOT_DIR/feeds.conf.example" \
 	"$PROJECT_SNAPSHOT/"
 normalize_project_source_modes "$PROJECT_SNAPSHOT"
@@ -2219,7 +2222,7 @@ mk_apk \
 	"luci-app-nes-emulator" \
 	"noarch" \
 	"Authenticated LuCI client for the NES emulator" \
-	"luci-base rpcd nes-emulator=$APK_VERSION" \
+	"luci-base rpcd jshn jsonfilter cgi-io nes-emulator=$APK_VERSION" \
 	"MIT" \
 	"$LUCI_ROOT" \
 	"$LUCI_APK" \
@@ -2322,7 +2325,7 @@ verify_feed_index() {
 		die "feed index for $arch has an invalid LuCI architecture"
 	[[ "$(grep -Ec '^    depends:' "$dump_file" || true)" == "1" ]] ||
 		die "feed index for $arch has unexpected dependency metadata"
-	for dependency in luci-base rpcd; do
+	for dependency in luci-base rpcd jshn jsonfilter cgi-io; do
 		[[ "$(grep -Ec "^[[:space:]]+- $dependency$" \
 			"$dump_file" || true)" == "1" ]] ||
 			die "feed index for $arch has invalid dependency: $dependency"
@@ -2497,7 +2500,7 @@ Unsigned local installation:
 
   cd <arch>
   sha256sum -c SHA256SUMS
-  apk --update-cache --wait 120 add luci-base rpcd
+  apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
   apk --repositories-file /dev/null --no-network --no-cache \
     --allow-untrusted --wait 120 add \
     ./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk

@@ -270,7 +270,7 @@ scp nes-emulator-1.0.0-r19.apk \
 On the router:
 
 ```sh
-apk --update-cache --wait 120 add luci-base rpcd
+apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
 apk --repositories-file /dev/null --no-network --no-cache \
   --allow-untrusted --wait 120 add \
   /tmp/nes-emulator-1.0.0-r19.apk \

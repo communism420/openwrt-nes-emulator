@@ -5,6 +5,10 @@ upgraded as a matching `nes-emulator` and `luci-app-nes-emulator` pair.
 
 ## Unreleased
 
+- Added validated export templates for separate `openwrt/packages` and
+  `openwrt/luci` submissions, including canonical dependencies, PIE hardening,
+  secure first-install preparation, file-mode manifests, and an upstreaming
+  checklist.
 - Added a fail-closed OpenWrt installer that detects the router's exact package
   ABI, selects the latest matching GitHub release, verifies both package
   checksums, and installs the native daemon and LuCI application together.

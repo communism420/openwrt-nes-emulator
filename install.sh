@@ -311,7 +311,7 @@ apk --allow-untrusted verify "$native_path" "$luci_path" >/dev/null ||
 say 'checksums and APK containers verified'
 
 say 'installing trusted LuCI runtime dependencies'
-apk --update-cache --wait 120 add luci-base rpcd
+apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
 say 'installing the verified emulator and LuCI packages in one transaction'
 apk --repositories-file /dev/null --no-network --no-cache \
 	--allow-untrusted --wait 120 add \

@@ -6,8 +6,10 @@ cd "$ROOT"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/repository_checks.py
 PYTHONDONTWRITEBYTECODE=1 python3 -c \
-	'import ast, pathlib; [ast.parse(p.read_text("utf-8"), str(p)) for p in map(pathlib.Path, ("tests/integration.py", "tests/rpc_client_contract.py", "tests/demo_rom_contract.py", "scripts/embed-play-html.py", "scripts/make-demo-rom.py"))]'
+	'import ast, pathlib; [ast.parse(p.read_text("utf-8"), str(p)) for p in map(pathlib.Path, ("tests/integration.py", "tests/rpc_client_contract.py", "tests/demo_rom_contract.py", "tests/upstream_export_contract.py", "scripts/embed-play-html.py", "scripts/make-demo-rom.py", "scripts/export-openwrt-upstream.py"))]'
 PYTHONDONTWRITEBYTECODE=1 python3 tests/demo_rom_contract.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/export-openwrt-upstream.py --check-templates
+PYTHONDONTWRITEBYTECODE=1 python3 tests/upstream_export_contract.py
 
 if command -v "${CC:-cc}" >/dev/null 2>&1; then
 	sh tests/host_audio_contract.sh
