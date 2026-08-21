@@ -73,16 +73,25 @@ enough flash, RAM, CPU time, or Wi-Fi throughput for the selected settings.
    apk --print-arch
    ```
 
-2. From the matching directory in the GitHub release, download both APKs and
-   its `SHA256SUMS` file. Keep the native and LuCI package revisions identical.
+2. From the GitHub release, download `SHA256SUMS` and the two APK assets whose
+   filenames end with that exact ABI. Keep the native and LuCI package
+   revisions identical:
+
+   ```text
+   nes-emulator-1.0.0-r19-<ABI>.apk
+   luci-app-nes-emulator-1.0.0-r19-<ABI>.apk
+   ```
 
 3. Verify and install them in one transaction:
 
    ```sh
-   sha256sum -c SHA256SUMS
+   ABI="$(apk --print-arch)"
+   grep -F -- "-${ABI}.apk" SHA256SUMS > "SHA256SUMS.${ABI}"
+   test "$(wc -l < "SHA256SUMS.${ABI}")" -eq 2
+   sha256sum -c "SHA256SUMS.${ABI}"
    apk --allow-untrusted add \
-    ./nes-emulator-1.0.0-r19.apk \
-    ./luci-app-nes-emulator-1.0.0-r19.apk
+    "./nes-emulator-1.0.0-r19-${ABI}.apk" \
+    "./luci-app-nes-emulator-1.0.0-r19-${ABI}.apk"
    ```
 
 4. Open **LuCI → Services → NES Emulator**, upload a ROM you are legally

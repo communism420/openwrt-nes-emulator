@@ -63,10 +63,18 @@ Recommended tag format: `v<version>-r<package-release>`, for example
 
 For a public release, attach:
 
-1. one archive containing the complete 35-architecture APK-feed snapshot;
-2. a top-level checksum file for that archive and the source archive;
+1. all 70 APKs as separate assets, using the exact ABI as a filename suffix;
+2. a top-level checksum file covering every APK and the source archive;
 3. `openwrt-nes-emulator-<version>-r<release>-source.tar.gz` from the build;
 4. concise release notes copied from `CHANGELOG.md`.
+
+GitHub requires unique asset names. Flatten the per-ABI build directories with
+this deterministic naming rule while keeping each APK byte-for-byte unchanged:
+
+```text
+nes-emulator-<version>-r<release>-<ABI>.apk
+luci-app-nes-emulator-<version>-r<release>-<ABI>.apk
+```
 
 The exact corresponding-source archive is required for the statically linked
 GPL-2.0-only FCEUmm binary. GitHub's automatic “Source code” archives do not
@@ -77,10 +85,9 @@ outside this repository and outside the build output. If the first release is
 unsigned, state that clearly and retain the `--allow-untrusted` installation
 instructions.
 
-Do not upload 70 APKs as 70 separate release attachments unless consumers
-specifically need that layout. The complete feed snapshot is easier to verify,
-download, and mirror; individual users then extract only their architecture
-directory.
+Release notes must tell users to run `apk --print-arch`, download the two APKs
+whose names end with that exact ABI, verify their rows from the top-level
+checksum file, and install both packages in one transaction.
 
 ## Final checks
 
