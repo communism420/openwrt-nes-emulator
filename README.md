@@ -106,7 +106,7 @@ installation:
    grep -F -- "-${ABI}.apk" SHA256SUMS > "SHA256SUMS.${ABI}"
    test "$(wc -l < "SHA256SUMS.${ABI}")" -eq 2
    sha256sum -c "SHA256SUMS.${ABI}"
-   apk --update-cache --wait 120 add luci-base rpcd
+   apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
    apk --repositories-file /dev/null --no-network --no-cache \
     --allow-untrusted --wait 120 add \
     "./nes-emulator-1.0.0-r19-${ABI}.apk" \
@@ -253,6 +253,7 @@ and runs the black-box integration suite.
 | `tests/` | Static, contract, transport, and black-box regression tests |
 | `docs/TECHNICAL.md` | Complete operational and release reference |
 | `docs/PUBLISHING.md` | GitHub settings, release assets, and launch checklist |
+| `UPSTREAMING.md` | Export and submission checklist for the official OpenWrt feeds |
 
 ## Contributing
 

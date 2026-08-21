@@ -83,7 +83,7 @@ case "$*" in
 	--allow-untrusted\ verify\ *)
 		[ "${INSTALL_TEST_VERIFY_FAIL:-0}" = '0' ]
 		;;
-	--update-cache\ --wait\ 120\ add\ luci-base\ rpcd)
+	--update-cache\ --wait\ 120\ add\ luci-base\ rpcd\ jshn\ jsonfilter\ cgi-io)
 		[ "${INSTALL_TEST_DEPENDENCY_FAIL:-0}" = '0' ]
 		;;
 	--repositories-file\ /dev/null\ --no-network\ --no-cache\ --allow-untrusted\ --wait\ 120\ add\ *)
@@ -184,7 +184,7 @@ grep -Fxq 'https://fixtures.invalid/releases/download/v1.2.3-r4/luci-app-nes-emu
 	"$LOG_ROOT/fetch.log" || fail 'LuCI package did not use the tag-scoped URL'
 [ "$(grep -c '^--allow-untrusted verify ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'APK containers were not verified together exactly once'
-[ "$(grep -c '^--update-cache --wait 120 add luci-base rpcd$' "$LOG_ROOT/apk.log")" -eq 1 ] ||
+[ "$(grep -c '^--update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io$' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'trusted LuCI dependencies were not installed exactly once'
 [ "$(grep -c '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'packages were not installed in one transaction'
@@ -583,7 +583,7 @@ export CASE_DEPENDENCY_FAIL CASE_ADD_FAIL
 if run_installer > "$TEST_ROOT/dependency-fail.out" 2> "$TEST_ROOT/dependency-fail.err"; then
 	fail 'trusted dependency failure was ignored'
 fi
-[ "$(grep -c '^--update-cache --wait 120 add luci-base rpcd$' "$LOG_ROOT/apk.log")" -eq 1 ] ||
+[ "$(grep -c '^--update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io$' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'failed dependency transaction was retried or skipped'
 ! grep -q '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' \
 	"$LOG_ROOT/apk.log" || fail 'local packages were installed after dependency failure'

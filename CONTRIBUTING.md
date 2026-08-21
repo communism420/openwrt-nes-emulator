@@ -44,6 +44,9 @@ The GitHub Actions workflow additionally downloads the hash-pinned FCEUmm
 tree, applies the two verified local patches, creates a static musl build, and
 runs black-box integration tests.
 
+Changes intended for the official OpenWrt feeds must also follow the separate
+[upstream export, validation, and submission checklist](UPSTREAMING.md).
+
 ## Code expectations
 
 - Keep router services responsive. Do not turn a media backlog into unbounded

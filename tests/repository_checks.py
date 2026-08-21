@@ -105,6 +105,7 @@ def check_publication_surface() -> None:
         "CONTRIBUTING.md",
         "SECURITY.md",
         "THIRD_PARTY_NOTICES.md",
+        "UPSTREAMING.md",
         ".github/ISSUE_TEMPLATE/bug-report.yml",
         ".github/ISSUE_TEMPLATE/feature-request.yml",
         ".github/ISSUE_TEMPLATE/config.yml",
@@ -116,8 +117,13 @@ def check_publication_surface() -> None:
         "docs/assets/social-preview.png",
         "install.sh",
         "scripts/make-demo-rom.py",
+        "scripts/export-openwrt-upstream.py",
         "tests/demo_rom_contract.py",
         "tests/install_contract.sh",
+        "tests/upstream_export_contract.py",
+        "package/luci-app-nes-emulator/Makefile.upstream",
+        "package/luci-app-nes-emulator/po/templates/nes-emulator.pot",
+        "upstream/openwrt-packages/multimedia/nes-emulator/Makefile",
     )
     for relative in required:
         path = ROOT / relative
@@ -147,6 +153,7 @@ def check_publication_surface() -> None:
         "CONTRIBUTING.md",
         "SECURITY.md",
         "THIRD_PARTY_NOTICES.md",
+        "UPSTREAMING.md",
         "docs/TECHNICAL.md",
         "docs/PUBLISHING.md",
     )
@@ -216,7 +223,7 @@ def check_installer() -> None:
         'apk --allow-untrusted verify "$native_path" "$luci_path"',
         "MAX_MANIFEST_BYTES=1048576",
         "MAX_APK_BYTES=8388608",
-        "apk --update-cache --wait 120 add luci-base rpcd",
+        "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io",
         "apk --repositories-file /dev/null --no-network --no-cache",
         '--allow-untrusted --wait 120 add \\\n\t"$native_path" "$luci_path"',
     ):
@@ -2241,13 +2248,14 @@ def check_static_build() -> None:
         "OpenWrt SDK builds cannot resolve C11 atomics on legacy targets",
     )
     require(
-        '"luci-base rpcd nes-emulator=$APK_VERSION"' in build_script
+        '"luci-base rpcd jshn jsonfilter cgi-io nes-emulator=$APK_VERSION"'
+        in build_script
         and "uclient-fetch" not in read("package/luci-app-nes-emulator/Makefile")
         and "EXTRA_DEPENDS:=nes-emulator "
         "(=$(PKG_VERSION)-r$(PKG_RELEASE))"
         in read("package/luci-app-nes-emulator/Makefile")
         and 'grep -Fxc "      - nes-emulator=$APK_VERSION"' in build_script
-        and "for dependency in luci-base rpcd" in build_script
+        and "for dependency in luci-base rpcd jshn jsonfilter cgi-io" in build_script
         and '"libc luci-base rpcd nes-emulator"' not in build_script
         and re.search(
             r'"NES emulator daemon with statically linked FCEUmm"\s*\\\n\s*""\s*\\',
@@ -2259,7 +2267,8 @@ def check_static_build() -> None:
         "apk add ./nes-emulator-$APK_VERSION.apk "
         "./luci-app-nes-emulator-$APK_VERSION.apk"
         in build_script
-        and "apk --update-cache --wait 120 add luci-base rpcd" in build_script
+        and "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io"
+        in build_script
         and "apk --repositories-file /dev/null --no-network --no-cache \\"
         in build_script
         and "--allow-untrusted --wait 120 add \\" in build_script
@@ -2428,7 +2437,7 @@ def check_source_bundle_filter() -> None:
         and 'LUCI_DIR="$PROJECT_SNAPSHOT/' in build_script,
         "build payload and corresponding source do not share one immutable snapshot",
     )
-    for relative in (".github", "docs", "scripts", "tests"):
+    for relative in (".github", "docs", "scripts", "tests", "upstream"):
         require(
             f'copy_clean_source_tree "$ROOT_DIR/{relative}" '
             f'"$PROJECT_SNAPSHOT/{relative}"' in build_script,
@@ -2445,6 +2454,7 @@ def check_source_bundle_filter() -> None:
         "README.md",
         "SECURITY.md",
         "THIRD_PARTY_NOTICES.md",
+        "UPSTREAMING.md",
         "feeds.conf.example",
     ):
         require(
@@ -2491,6 +2501,139 @@ def check_source_bundle_filter() -> None:
         "-name '*.pyc'",
     ):
         require(pattern in build_script, f"source filter is missing {pattern}")
+
+
+def check_upstream_export_contract() -> None:
+    guide = read("UPSTREAMING.md")
+    exporter = read("scripts/export-openwrt-upstream.py")
+    contract = read("tests/upstream_export_contract.py")
+    check_script = read("scripts/check.sh")
+    workflow = read(".github/workflows/ci.yml")
+    native = read("upstream/openwrt-packages/multimedia/nes-emulator/Makefile")
+    luci = read("package/luci-app-nes-emulator/Makefile.upstream")
+    standalone_luci = read("package/luci-app-nes-emulator/Makefile")
+    luci_pot = read("package/luci-app-nes-emulator/po/templates/nes-emulator.pot")
+    installer = read("install.sh")
+    build_script = read("scripts/build-apks.sh")
+
+    for reference in (
+        "https://github.com/openwrt/packages/blob/master/CONTRIBUTING.md",
+        "https://github.com/openwrt/luci/blob/master/CONTRIBUTING.md",
+        "https://github.com/openwrt/luci/blob/master/luci.mk",
+        "https://github.com/openwrt/openwrt/blob/main/include/package.mk",
+        "https://github.com/openwrt/openwrt/blob/main/scripts/package-metadata.pl",
+        "https://github.com/openwrt/openwrt/blob/main/feeds.conf.default",
+    ):
+        require(reference in guide, f"upstream guide omits primary source {reference}")
+    require(
+        "python3 scripts/export-openwrt-upstream.py" in guide
+        and "openwrt-packages/multimedia/nes-emulator" in guide
+        and "openwrt-luci/applications/luci-app-nes-emulator" in guide
+        and "--check-templates" in guide
+        and "--validate-only" in guide
+        and "git commit -s" in guide
+        and "git update-index --chmod=+x" in guide
+        and "./build/i18n-sync.sh applications/luci-app-nes-emulator" in guide
+        and "must begin with `100755`" in guide
+        and "packages PR first" in guide,
+        "upstream guide lacks the export, validation, or human submission workflow",
+    )
+
+    upstream_dependencies = {
+        "+luci-base",
+        "+rpcd",
+        "+jshn",
+        "+jsonfilter",
+        "+cgi-io",
+        "+nes-emulator",
+    }
+    luci_depends = re.search(r"^LUCI_DEPENDS:=(.*)$", luci, re.MULTILINE)
+    require(luci_depends is not None, "upstream LuCI template lacks LUCI_DEPENDS")
+    require(
+        set(luci_depends.group(1).split()) >= upstream_dependencies
+        and "include ../../luci.mk" in luci
+        and "# call BuildPackage - OpenWrt buildroot signature" in luci
+        and "PKG_RELEASE:=1" in luci
+        and "EXTRA_DEPENDS" not in luci
+        and "nes-emulator (=" not in luci,
+        "upstream LuCI recipe does not use canonical unversioned dependencies",
+    )
+    require(
+        luci_pot.startswith(
+            'msgid ""\nmsgstr "Content-Type: text/plain; charset=UTF-8"\n'
+        )
+        and luci_pot.count("\nmsgid ") >= 20
+        and "applications/luci-app-nes-emulator/" in luci_pot
+        and "package/luci-app-nes-emulator/" not in luci_pot,
+        "LuCI translation template is missing or was not generated in upstream layout",
+    )
+    require(
+        "PKG_RELEASE:=1" in native
+        and "PKG_ASLR_PIE_REGULAR:=1" in native
+        and re.search(r"^PKG_HASH:=[0-9a-f]{64}$", native, re.MULTILINE)
+        and "/releases/download/v$(PROJECT_SOURCE_RELEASE)" in native
+        and "/latest/" not in native
+        and "luci-app-nes-emulator" not in native,
+        "native upstream template is mutable, unverified, or creates a dependency cycle",
+    )
+    require(
+        "define Package/nes-emulator/postinst" in native
+        and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native
+        and '[ -n "$${PKG_INSTROOT:-}" ] && exit 0' in native
+        and "NESD_ON_DEMAND=1 NESD_SKIP_AUTOLOAD=1" in native
+        and "/etc/init.d/nes-emulator preflight" in native,
+        "native upstream post-install does not prepare secure runtime ownership",
+    )
+
+    require(
+        "EXTRA_DEPENDS:=nes-emulator (=$(PKG_VERSION)-r$(PKG_RELEASE))"
+        in standalone_luci
+        and "+jshn" in standalone_luci
+        and "+jsonfilter" in standalone_luci
+        and "+cgi-io" in standalone_luci
+        and '"luci-base rpcd jshn jsonfilter cgi-io nes-emulator=$APK_VERSION"'
+        in build_script
+        and "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io"
+        in installer,
+        "standalone exact-version or direct-runtime dependency semantics changed",
+    )
+
+    for marker in (
+        "--check-templates",
+        "--validate-only",
+        "--maintainer",
+        "materialize_identity",
+        "MAINTAINER_PLACEHOLDER not in materialized",
+        "export destination already exists",
+        "SHA256SUMS",
+        "FILE_MODES",
+        "shutil.rmtree(staging, ignore_errors=True)",
+    ):
+        require(marker in exporter, f"upstream exporter lacks safety contract: {marker}")
+    require(
+        'require(\n            args.maintainer is not None,' in exporter
+        and '"--maintainer is required for an upstream submission export"'
+        in exporter
+        and "maintainer metadata is omitted" not in exporter
+        and "users.noreply.github.com" in exporter,
+        "upstream exporter does not require a validated real maintainer identity",
+    )
+    require(
+        "PKG_MAINTAINER:=@OPENWRT_MAINTAINER@" in luci
+        and "LUCI_MAINTAINER:=$(PKG_MAINTAINER)" in luci,
+        "LuCI template does not satisfy formal and packaged maintainer metadata",
+    )
+    require(
+        "guarded_source_snapshot" in contract
+        and "deterministic exported trees" in contract
+        and "do-not-overwrite" in contract
+        and "users.noreply.github.com" in contract
+        and "dependency tampering" in contract
+        and "tests/upstream_export_contract.py" in check_script
+        and "scripts/export-openwrt-upstream.py --check-templates" in check_script
+        and "sh scripts/check.sh" in workflow,
+        "CI does not enforce the upstream exporter's black-box contracts",
+    )
 
 
 def check_publish_helpers() -> None:
@@ -2728,6 +2871,7 @@ def main() -> int:
     check_static_build()
     check_architecture_matrix()
     check_source_bundle_filter()
+    check_upstream_export_contract()
     check_savestates()
     check_publish_helpers()
     print("repository checks: OK")

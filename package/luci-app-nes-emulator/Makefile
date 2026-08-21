@@ -9,7 +9,7 @@ PKG_LICENSE_FILES:=files/LICENSE-MIT
 PKG_MAINTAINER:=OpenWrt NES Emulator contributors
 
 LUCI_TITLE:=LuCI support for NES Emulator (FCEUmm)
-LUCI_DEPENDS:=+nes-emulator +luci-base +rpcd
+LUCI_DEPENDS:=+luci-base +rpcd +jshn +jsonfilter +cgi-io +nes-emulator
 LUCI_PKGARCH:=all
 
 define Package/$(PKG_NAME)/description
