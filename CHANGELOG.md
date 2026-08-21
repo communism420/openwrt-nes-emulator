@@ -3,7 +3,7 @@
 Notable user-visible changes are recorded here. Package revisions must be
 upgraded as a matching `nes-emulator` and `luci-app-nes-emulator` pair.
 
-## 1.0.0-r19 — initial public release candidate
+## 1.0.0-r19 — initial public release
 
 - Router-side FCEUmm emulation with raw RGB565 or software JPEG streaming.
 - LuCI management, authenticated ROM import, UCI/procd integration, and safe
