@@ -114,8 +114,10 @@ def check_publication_surface() -> None:
         "docs/assets/openwrt-nes-emulator.png",
         "docs/assets/social-preview.svg",
         "docs/assets/social-preview.png",
+        "install.sh",
         "scripts/make-demo-rom.py",
         "tests/demo_rom_contract.py",
+        "tests/install_contract.sh",
     )
     for relative in required:
         path = ROOT / relative
@@ -183,6 +185,84 @@ def check_publication_surface() -> None:
     require(
         not any(path.suffix.lower() in rom_suffixes for path in ROOT.rglob("*")),
         "repository contains a ROM or emulator save file",
+    )
+
+
+def check_installer() -> None:
+    installer = read("install.sh")
+    readme = read("README.md")
+    publishing = read("docs/PUBLISHING.md")
+    build_script = read("scripts/build-apks.sh")
+    check_script = read("scripts/check.sh")
+    workflow = read(".github/workflows/ci.yml")
+
+    for marker in (
+        "#!/bin/sh",
+        "set -eu",
+        "set -f",
+        "umask 077",
+        "LC_ALL=C",
+        "apk --print-arch",
+        "/releases/latest/download",
+        "SHA256SUMS",
+        "manifest_entry",
+        "sha256sum",
+        'apk --allow-untrusted verify "$native_path" "$luci_path"',
+        "MAX_MANIFEST_BYTES=1048576",
+        "MAX_APK_BYTES=8388608",
+        "apk --update-cache --wait 120 add luci-base rpcd",
+        "apk --repositories-file /dev/null --no-network --no-cache",
+        '--allow-untrusted --wait 120 add \\\n\t"$native_path" "$luci_path"',
+    ):
+        require(marker in installer, f"installer is missing required contract: {marker}")
+
+    for forbidden in (
+        "--no-check-certificate",
+        "curl -k",
+        "wget --no-check",
+        "eval ",
+        "apk upgrade",
+        "--force-depends",
+        "--force-downgrade",
+        "--update-cache --allow-untrusted",
+    ):
+        require(forbidden not in installer, f"installer contains unsafe behavior: {forbidden}")
+
+    require(
+        not re.search(
+            r"apk [^\n]*(?:--update-cache[^\n]*--allow-untrusted|"
+            r"--allow-untrusted[^\n]*--update-cache)",
+            installer,
+        ),
+        "installer applies allow-untrusted while using configured repositories",
+    )
+
+    require(
+        "raw.githubusercontent.com/communism420/openwrt-nes-emulator/main/install.sh"
+        in readme
+        and "mktemp /tmp/openwrt-nes-installer.XXXXXX" in readme
+        and "uclient-fetch -q -T 30 -O" in readme
+        and "apk --repositories-file /dev/null --no-network --no-cache" in readme
+        and "| sh" not in readme,
+        "README automatic installation command is missing or masks download failures",
+    )
+    require(
+        "stable interface" in publishing
+        and "tests/install_contract.sh" in publishing,
+        "publication guide does not preserve the installer's release-asset contract",
+    )
+    require(
+        '"$ROOT_DIR/install.sh"' in build_script,
+        "corresponding-source snapshot omits install.sh",
+    )
+    require(
+        "sh -n install.sh" in check_script
+        and "sh tests/install_contract.sh" in check_script,
+        "static checks do not execute the installer contract",
+    )
+    require(
+        "shellcheck install.sh tests/install_contract.sh" in workflow,
+        "CI does not run ShellCheck over install.sh",
     )
 
 
@@ -2331,6 +2411,7 @@ def check_source_bundle_filter() -> None:
         "CHANGELOG.md",
         "CODE_OF_CONDUCT.md",
         "CONTRIBUTING.md",
+        "install.sh",
         "LICENSE",
         "README.md",
         "SECURITY.md",
@@ -2608,6 +2689,7 @@ def check_savestates() -> None:
 def main() -> int:
     check_versions()
     check_publication_surface()
+    check_installer()
     check_upgrade_migration()
     check_init_stream_fps()
     check_json()

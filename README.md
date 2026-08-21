@@ -67,6 +67,18 @@ enough flash, RAM, CPU time, or Wi-Fi throughput for the selected settings.
 
 ## Quick install
 
+As root on an OpenWrt 25.12 router, this one-liner downloads the installer to a
+private temporary file. It detects the router and APK ABI, selects the latest
+release's matching packages, verifies both, and installs the daemon and LuCI UI:
+
+```sh
+( f="$(mktemp /tmp/openwrt-nes-installer.XXXXXX)" || exit 1; trap 'rm -f -- "$f"' 0; uclient-fetch -q -T 30 -O "$f" https://raw.githubusercontent.com/communism420/openwrt-nes-emulator/main/install.sh && test -s "$f" && sh "$f" )
+```
+
+The installer refuses non-25.12 firmware, opkg-based releases, and unknown
+ABIs. You can [review `install.sh`](install.sh) before running it. For a manual
+installation:
+
 1. On the router, find the package ABI:
 
    ```sh
@@ -82,14 +94,18 @@ enough flash, RAM, CPU time, or Wi-Fi throughput for the selected settings.
    luci-app-nes-emulator-1.0.0-r19-<ABI>.apk
    ```
 
-3. Verify and install them in one transaction:
+3. Verify them, install the trusted LuCI dependencies from your configured
+   OpenWrt feeds, then install both local APKs together without consulting any
+   repository while `--allow-untrusted` is active:
 
    ```sh
    ABI="$(apk --print-arch)"
    grep -F -- "-${ABI}.apk" SHA256SUMS > "SHA256SUMS.${ABI}"
    test "$(wc -l < "SHA256SUMS.${ABI}")" -eq 2
    sha256sum -c "SHA256SUMS.${ABI}"
-   apk --allow-untrusted add \
+   apk --update-cache --wait 120 add luci-base rpcd
+   apk --repositories-file /dev/null --no-network --no-cache \
+    --allow-untrusted --wait 120 add \
     "./nes-emulator-1.0.0-r19-${ABI}.apk" \
     "./luci-app-nes-emulator-1.0.0-r19-${ABI}.apk"
    ```

@@ -3,6 +3,12 @@
 Notable user-visible changes are recorded here. Package revisions must be
 upgraded as a matching `nes-emulator` and `luci-app-nes-emulator` pair.
 
+## Unreleased
+
+- Added a fail-closed OpenWrt installer that detects the router's APK ABI,
+  selects the latest matching GitHub release, verifies both package checksums,
+  and installs the native daemon and LuCI application in one transaction.
+
 ## 1.0.0-r19 — initial public release
 
 - Router-side FCEUmm emulation with raw RGB565 or software JPEG streaming.
