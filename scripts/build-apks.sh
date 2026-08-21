@@ -955,7 +955,7 @@ run_publish_helpers_selftest() {
 	printf 'generated\n' > "$OUT_STAGE/generated"
 	remove_sentinel="$OUT_PARENT/remove-replaced-once"
 	# Invoked indirectly by move_output_directory() during this fault injection.
-	# shellcheck disable=SC2329
+	# shellcheck disable=SC2317,SC2329
 	mv() {
 		local -a arguments=("$@")
 		local source destination

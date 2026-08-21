@@ -28,8 +28,9 @@ jobs:
       - name: Static repository checks
         run: |
           # ShellCheck has no BusyBox ash dialect. Check as POSIX sh while
-          # allowing ash's supported `local` builtin.
-          shellcheck --shell=sh --exclude=SC1091,SC3043 \
+          # allowing ash's `local` builtin and deliberate A && B || fallback
+          # guards whose middle terms are side-effect-free tests.
+          shellcheck --shell=sh --exclude=SC1091,SC3043,SC2015 \
             package/nes-emulator/files/nes-emulator.init \
             package/luci-app-nes-emulator/root/usr/libexec/rpcd/nes-emulator
           shellcheck scripts/build-apks.sh scripts/check.sh
