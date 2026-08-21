@@ -89,6 +89,17 @@ Release notes must tell users to run `apk --print-arch`, download the two APKs
 whose names end with that exact ABI, verify their rows from the top-level
 checksum file, and install both packages in one transaction.
 
+The automatic installer treats these release details as a stable interface:
+
+- the latest release exposes an asset named exactly `SHA256SUMS`;
+- APK names follow the two ABI-suffixed patterns above;
+- both APKs for one ABI use the same `version-rN` revision;
+- tag-scoped asset URLs remain available after a newer release is published,
+  and published assets are never replaced in place.
+
+Changing any of these rules requires updating `install.sh` and
+`tests/install_contract.sh` in the same commit.
+
 ## Final checks
 
 ```sh

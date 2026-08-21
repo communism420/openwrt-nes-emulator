@@ -1235,6 +1235,7 @@ cp -a \
 	"$ROOT_DIR/CHANGELOG.md" \
 	"$ROOT_DIR/CODE_OF_CONDUCT.md" \
 	"$ROOT_DIR/CONTRIBUTING.md" \
+	"$ROOT_DIR/install.sh" \
 	"$ROOT_DIR/LICENSE" \
 	"$ROOT_DIR/README.md" \
 	"$ROOT_DIR/SECURITY.md" \
