@@ -238,15 +238,17 @@ native_entry="$(manifest_entry 'nes-emulator-' "-$apk_abi.apk")" ||
 	die "the latest release has no unique native APK for ABI $apk_abi"
 native_hash="${native_entry%% *}"
 native_name="${native_entry#* }"
-[ "$native_hash" != "$native_entry" ] && [ -n "$native_name" ] ||
+if [ "$native_hash" = "$native_entry" ] || [ -z "$native_name" ]; then
 	die 'invalid native APK checksum entry'
+fi
 
 luci_entry="$(manifest_entry 'luci-app-nes-emulator-' "-$apk_abi.apk")" ||
 	die "the latest release has no unique LuCI APK for ABI $apk_abi"
 luci_hash="${luci_entry%% *}"
 luci_name="${luci_entry#* }"
-[ "$luci_hash" != "$luci_entry" ] && [ -n "$luci_name" ] ||
+if [ "$luci_hash" = "$luci_entry" ] || [ -z "$luci_name" ]; then
 	die 'invalid LuCI APK checksum entry'
+fi
 
 package_version="${native_name#nes-emulator-}"
 package_version="${package_version%-"$apk_abi".apk}"
