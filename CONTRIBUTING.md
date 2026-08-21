@@ -6,9 +6,9 @@ Thanks for helping improve the world's least necessary router workload.
 
 - Search existing issues first.
 - Confirm the problem still exists with the latest package revision.
-- Include the OpenWrt version, router model, `apk --print-arch` (or
-  `OPENWRT_ARCH` on 24.10), stream format, FPS limit, and relevant `logread`
-  output.
+- Include the OpenWrt version, router model, `DISTRIB_ARCH` from
+  `/etc/openwrt_release` (or `OPENWRT_ARCH` on 24.10), stream format, FPS
+  limit, and relevant `logread` output.
 - Remove bearer tokens, public IP addresses, Wi-Fi credentials, ROM names you
   do not want to disclose, and other private data.
 - Do not attach ROMs, BIOS files, save data, router backups, or signing keys.

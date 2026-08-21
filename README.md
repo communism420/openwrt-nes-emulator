@@ -68,8 +68,9 @@ enough flash, RAM, CPU time, or Wi-Fi throughput for the selected settings.
 ## Quick install
 
 As root on an OpenWrt 25.12 router, this one-liner downloads the installer to a
-private temporary file. It detects the router and APK ABI, selects the latest
-release's matching packages, verifies both, and installs the daemon and LuCI UI:
+private temporary file. It detects the router's exact OpenWrt package profile,
+selects the latest release's matching packages, verifies both, and installs the
+daemon and LuCI UI:
 
 ```sh
 ( f="$(mktemp /tmp/openwrt-nes-installer.XXXXXX)" || exit 1; trap 'rm -f -- "$f"' 0; uclient-fetch -q -T 30 -O "$f" https://raw.githubusercontent.com/communism420/openwrt-nes-emulator/main/install.sh && test -s "$f" && sh "$f" )
@@ -79,10 +80,11 @@ The installer refuses non-25.12 firmware, opkg-based releases, and unknown
 ABIs. You can [review `install.sh`](install.sh) before running it. For a manual
 installation:
 
-1. On the router, find the package ABI:
+1. On the router, find the exact OpenWrt package ABI used by release assets:
 
    ```sh
-   apk --print-arch
+   . /etc/openwrt_release
+   printf '%s\n' "$DISTRIB_ARCH"
    ```
 
 2. From the GitHub release, download `SHA256SUMS` and the two APK assets whose
@@ -99,7 +101,8 @@ installation:
    repository while `--allow-untrusted` is active:
 
    ```sh
-   ABI="$(apk --print-arch)"
+   . /etc/openwrt_release
+   ABI="$DISTRIB_ARCH"
    grep -F -- "-${ABI}.apk" SHA256SUMS > "SHA256SUMS.${ABI}"
    test "$(wc -l < "SHA256SUMS.${ABI}")" -eq 2
    sha256sum -c "SHA256SUMS.${ABI}"

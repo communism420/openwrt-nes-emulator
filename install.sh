@@ -12,6 +12,7 @@ REPOSITORY='communism420/openwrt-nes-emulator'
 LATEST_BASE="${OPENWRT_NES_LATEST_BASE:-https://github.com/$REPOSITORY/releases/latest/download}"
 RELEASES_BASE="${OPENWRT_NES_RELEASES_BASE:-https://github.com/$REPOSITORY/releases/download}"
 OPENWRT_RELEASE_FILE="${OPENWRT_NES_RELEASE_FILE:-/etc/openwrt_release}"
+APK_ARCH_FILE="${OPENWRT_NES_APK_ARCH_FILE:-/etc/apk/arch}"
 MODEL_FILE="${OPENWRT_NES_MODEL_FILE:-/tmp/sysinfo/model}"
 TEMP_ROOT="${OPENWRT_NES_TMPDIR:-${TMPDIR:-/tmp}}"
 MIN_TEMP_KB=4096
@@ -31,9 +32,9 @@ usage() {
 	cat <<'EOF'
 Usage: sh install.sh
 
-Detect this OpenWrt router's APK ABI, download the matching nes-emulator and
-LuCI packages from the latest GitHub release, verify their SHA-256 checksums,
-and install both packages in one transaction.
+Detect this router's OpenWrt package architecture, download the matching
+nes-emulator and LuCI packages from the latest GitHub release, verify their
+SHA-256 checksums, and install both packages in one transaction.
 EOF
 }
 
@@ -104,19 +105,37 @@ for required_command in awk df grep mktemp sed sha256sum uname wc; do
 		die "required command is missing: $required_command"
 done
 
-apk_abi="$(apk --print-arch 2>/dev/null)" ||
-	die 'apk could not determine the package ABI'
-[ -n "$apk_abi" ] || die 'apk returned an empty package ABI'
-case "$apk_abi" in
+release_package_arch="$DISTRIB_ARCH"
+[ -n "$release_package_arch" ] ||
+	die 'OpenWrt release metadata does not declare a package architecture'
+case "$release_package_arch" in
 	*'
-'*) die 'apk returned more than one package ABI' ;;
+'*) die 'OpenWrt release metadata contains more than one package architecture' ;;
 esac
-[ "${#apk_abi}" -le 64 ] || die 'apk returned an unexpectedly long package ABI'
-printf '%s\n' "$apk_abi" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+-]*$' ||
-	die "apk returned an unsafe package ABI: $apk_abi"
-if [ -n "$DISTRIB_ARCH" ] && [ "$DISTRIB_ARCH" != "$apk_abi" ]; then
-	die "firmware architecture $DISTRIB_ARCH does not match apk ABI $apk_abi"
-fi
+[ "${#release_package_arch}" -le 64 ] ||
+	die 'OpenWrt release metadata contains an unexpectedly long package architecture'
+printf '%s\n' "$release_package_arch" |
+	grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+-]*$' ||
+	die "OpenWrt release metadata contains an unsafe package architecture: $release_package_arch"
+
+[ -r "$APK_ARCH_FILE" ] ||
+	die "apk package architecture metadata is missing: $APK_ARCH_FILE"
+package_arch="$(sed -n \
+	-e 's/^[[:space:]]*//' \
+	-e 's/[[:space:]]*$//' \
+	-e '/^$/d' \
+	-e 'p' \
+	-e 'q' \
+	"$APK_ARCH_FILE")" ||
+	die 'cannot read the apk package architecture metadata'
+[ -n "$package_arch" ] ||
+	die 'apk package architecture metadata is empty'
+[ "${#package_arch}" -le 64 ] ||
+	die 'apk package architecture metadata is unexpectedly long'
+printf '%s\n' "$package_arch" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+-]*$' ||
+	die "apk package architecture metadata is unsafe: $package_arch"
+[ "$package_arch" = "$release_package_arch" ] ||
+	die "OpenWrt package architecture $release_package_arch does not match apk database architecture $package_arch"
 
 router_model='unknown model'
 if [ -r "$MODEL_FILE" ]; then
@@ -128,9 +147,8 @@ say "router: $router_model"
 openwrt_version="${DISTRIB_RELEASE:-unknown}"
 [ -z "$DISTRIB_REVISION" ] || openwrt_version="$openwrt_version $DISTRIB_REVISION"
 say "OpenWrt: $openwrt_version (${DISTRIB_TARGET:-unknown})"
-say "firmware package architecture: ${DISTRIB_ARCH:-unknown}"
+say "OpenWrt package architecture: $package_arch"
 say "kernel architecture: $(uname -m)"
-say "APK ABI: $apk_abi"
 
 [ -d "$TEMP_ROOT" ] || die "temporary directory does not exist: $TEMP_ROOT"
 [ "$TEMP_ROOT" = '/' ] || TEMP_ROOT="${TEMP_ROOT%/}"
@@ -234,16 +252,16 @@ manifest_entry() {
 	' "$checksums"
 }
 
-native_entry="$(manifest_entry 'nes-emulator-' "-$apk_abi.apk")" ||
-	die "the latest release has no unique native APK for ABI $apk_abi"
+native_entry="$(manifest_entry 'nes-emulator-' "-$package_arch.apk")" ||
+	die "the latest release has no unique native APK for architecture $package_arch"
 native_hash="${native_entry%% *}"
 native_name="${native_entry#* }"
 if [ "$native_hash" = "$native_entry" ] || [ -z "$native_name" ]; then
 	die 'invalid native APK checksum entry'
 fi
 
-luci_entry="$(manifest_entry 'luci-app-nes-emulator-' "-$apk_abi.apk")" ||
-	die "the latest release has no unique LuCI APK for ABI $apk_abi"
+luci_entry="$(manifest_entry 'luci-app-nes-emulator-' "-$package_arch.apk")" ||
+	die "the latest release has no unique LuCI APK for architecture $package_arch"
 luci_hash="${luci_entry%% *}"
 luci_name="${luci_entry#* }"
 if [ "$luci_hash" = "$luci_entry" ] || [ -z "$luci_name" ]; then
@@ -251,9 +269,9 @@ if [ "$luci_hash" = "$luci_entry" ] || [ -z "$luci_name" ]; then
 fi
 
 package_version="${native_name#nes-emulator-}"
-package_version="${package_version%-"$apk_abi".apk}"
+package_version="${package_version%-"$package_arch".apk}"
 luci_version="${luci_name#luci-app-nes-emulator-}"
-luci_version="${luci_version%-"$apk_abi".apk}"
+luci_version="${luci_version%-"$package_arch".apk}"
 
 printf '%s\n' "$package_version" |
 	grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$' ||
@@ -262,9 +280,9 @@ printf '%s\n' "$package_version" |
 	die 'the latest release has an unexpectedly long package version'
 [ "$luci_version" = "$package_version" ] ||
 	die 'the native and LuCI package revisions do not match'
-[ "$native_name" = "nes-emulator-$package_version-$apk_abi.apk" ] ||
+[ "$native_name" = "nes-emulator-$package_version-$package_arch.apk" ] ||
 	die 'the native APK filename is invalid'
-[ "$luci_name" = "luci-app-nes-emulator-$package_version-$apk_abi.apk" ] ||
+[ "$luci_name" = "luci-app-nes-emulator-$package_version-$package_arch.apk" ] ||
 	die 'the LuCI APK filename is invalid'
 
 release_tag="v$package_version"
@@ -299,5 +317,5 @@ apk --repositories-file /dev/null --no-network --no-cache \
 	--allow-untrusted --wait 120 add \
 	"$native_path" "$luci_path"
 
-say "installation complete: $package_version for $apk_abi"
+say "installation complete: $package_version for $package_arch"
 say 'open LuCI -> Services -> NES Emulator'

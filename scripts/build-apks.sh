@@ -2464,9 +2464,10 @@ The output contains a separate APK v3 feed for each architecture:
 
 A full build without ARCHES covers all 35 package ABIs in the official
 OpenWrt $OPENWRT_ARCH_RELEASE release: 35 directories and 70 APKs. To find
-the correct directory for a router, run:
+the correct directory for an OpenWrt 25.12 router, run:
 
-  apk --print-arch
+  . /etc/openwrt_release
+  printf '%s\n' "\$DISTRIB_ARCH"
 
 FCEUmm commit $FCEUMM_SHORT_COMMIT is statically linked into /usr/bin/nesd.
 No separate fceumm_libretro.so is required.
@@ -2496,7 +2497,10 @@ Unsigned local installation:
 
   cd <arch>
   sha256sum -c SHA256SUMS
-  apk --allow-untrusted add ./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk
+  apk --update-cache --wait 120 add luci-base rpcd
+  apk --repositories-file /dev/null --no-network --no-cache \
+    --allow-untrusted --wait 120 add \
+    ./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk
 EOF
 fi
 

@@ -85,9 +85,10 @@ outside this repository and outside the build output. If the first release is
 unsigned, state that clearly and retain the `--allow-untrusted` installation
 instructions.
 
-Release notes must tell users to run `apk --print-arch`, download the two APKs
-whose names end with that exact ABI, verify their rows from the top-level
-checksum file, and install both packages in one transaction.
+Release notes must tell users to read `DISTRIB_ARCH` from
+`/etc/openwrt_release`, download the two APKs whose names end with that exact
+OpenWrt package ABI, verify their rows from the top-level checksum file, and
+install both packages together.
 
 The automatic installer treats these release details as a stable interface:
 

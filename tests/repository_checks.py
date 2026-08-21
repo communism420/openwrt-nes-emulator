@@ -192,8 +192,10 @@ def check_installer() -> None:
     installer = read("install.sh")
     readme = read("README.md")
     publishing = read("docs/PUBLISHING.md")
+    technical = read("docs/TECHNICAL.md")
     build_script = read("scripts/build-apks.sh")
     check_script = read("scripts/check.sh")
+    installer_contract = read("tests/install_contract.sh")
     workflow = read(".github/workflows/ci.yml")
 
     for marker in (
@@ -202,7 +204,11 @@ def check_installer() -> None:
         "set -f",
         "umask 077",
         "LC_ALL=C",
-        "apk --print-arch",
+        'release_package_arch="$DISTRIB_ARCH"',
+        'APK_ARCH_FILE="${OPENWRT_NES_APK_ARCH_FILE:-/etc/apk/arch}"',
+        '"$package_arch" = "$release_package_arch"',
+        'say "OpenWrt package architecture: $package_arch"',
+        '"-$package_arch.apk"',
         "/releases/latest/download",
         "SHA256SUMS",
         "manifest_entry",
@@ -225,6 +231,7 @@ def check_installer() -> None:
         "--force-depends",
         "--force-downgrade",
         "--update-cache --allow-untrusted",
+        "apk --print-arch",
     ):
         require(forbidden not in installer, f"installer contains unsafe behavior: {forbidden}")
 
@@ -245,6 +252,24 @@ def check_installer() -> None:
         and "apk --repositories-file /dev/null --no-network --no-cache" in readme
         and "| sh" not in readme,
         "README automatic installation command is missing or masks download failures",
+    )
+    require(
+        ". /etc/openwrt_release" in readme
+        and 'ABI="$DISTRIB_ARCH"' in readme
+        and "DISTRIB_ARCH" in technical
+        and "DISTRIB_ARCH" in publishing
+        and ". /etc/openwrt_release" in build_script
+        and "apk --print-arch" not in readme
+        and "apk --print-arch" not in publishing
+        and "apk --print-arch" not in build_script,
+        "installation docs do not use the exact OpenWrt package architecture",
+    )
+    require(
+        "aarch64_cortex-a53" in installer_contract
+        and "printf '%s\\n' 'aarch64'" in installer_contract
+        and "generic apk-tools architecture was selected" in installer_contract
+        and "does not declare a package architecture" in installer_contract,
+        "installer tests do not cover generic apk ABI versus OpenWrt package profile",
     )
     require(
         "stable interface" in publishing
@@ -2234,11 +2259,15 @@ def check_static_build() -> None:
         "apk add ./nes-emulator-$APK_VERSION.apk "
         "./luci-app-nes-emulator-$APK_VERSION.apk"
         in build_script
-        and "apk --allow-untrusted add ./nes-emulator-$APK_VERSION.apk "
-        "./luci-app-nes-emulator-$APK_VERSION.apk"
+        and "apk --update-cache --wait 120 add luci-base rpcd" in build_script
+        and "apk --repositories-file /dev/null --no-network --no-cache \\"
+        in build_script
+        and "--allow-untrusted --wait 120 add \\" in build_script
+        and "./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk"
         in build_script
         and re.search(
-            r"apk --allow-untrusted add\s+\\\n"
+            r"apk --repositories-file /dev/null --no-network --no-cache\s+\\\n"
+            r"\s*--allow-untrusted --wait 120 add\s+\\\n"
             rf"\s*(?:\./|/tmp/)nes-emulator-{re.escape(VERSION)}-r"
             rf"{re.escape(PACKAGE_RELEASE)}\.apk\s+\\\n"
             rf"\s*(?:\./|/tmp/)luci-app-nes-emulator-{re.escape(VERSION)}-r"
