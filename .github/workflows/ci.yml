@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils build-essential curl file musl-tools nodejs patch python3 shellcheck
+
+      - name: Static repository checks
+        run: |
+          shellcheck --shell=busybox --exclude=SC1091 \
+            package/nes-emulator/files/nes-emulator.init \
+            package/luci-app-nes-emulator/root/usr/libexec/rpcd/nes-emulator
+          shellcheck scripts/build-apks.sh scripts/check.sh
+          sh scripts/check.sh
+
+      - name: Fetch, verify and patch pinned FCEUmm
+        working-directory: ${{ runner.temp }}
+        run: |
+          FCEUMM_DIR="$PWD/libretro-fceumm-76f68314ce4213703174108f461c431001dcc204"
+          STATE_PATCH="${{ github.workspace }}/package/nes-emulator/patches/001-propagate-savestate-parse-errors.patch"
+          ROM_BUFFER_PATCH="${{ github.workspace }}/package/nes-emulator/patches/002-load-supplied-rom-buffer.patch"
+          curl --fail --location --retry 3 \
+            --output fceumm.tar.gz \
+            https://codeload.github.com/libretro/libretro-fceumm/tar.gz/76f68314ce4213703174108f461c431001dcc204
+          echo "b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031  fceumm.tar.gz" |
+            sha256sum --check --strict
+          tar -xzf fceumm.tar.gz
+          printf '%s  %s\n%s  %s\n' \
+            "5402c5d7c4df5a3c6ea3f721aa8abfc6f6bc5242ddb69b50a75a7b07ea492c3e" "$STATE_PATCH" \
+            "8bb6a69091796b5af3c3bce2a4d4b8bb33e6751a3019370660edcabb842cbf32" "$ROM_BUFFER_PATCH" |
+            sha256sum --check --strict
+          patch --batch --forward -d "$FCEUMM_DIR" -p1 < "$STATE_PATCH"
+          patch --batch --forward -d "$FCEUMM_DIR" -p1 < "$ROM_BUFFER_PATCH"
+
+      - name: Build fully static nesd
+        run: |
+          make -j"$(nproc)" -C package/nes-emulator/src \
+            FCEUMM_DIR="${{ runner.temp }}/libretro-fceumm-76f68314ce4213703174108f461c431001dcc204" \
+            FCEUMM_GIT_VERSION=76f68314ce42 \
+            CC=musl-gcc \
+            CFLAGS="-O2 -Wall -Wextra -std=c11 -ffunction-sections -fdata-sections" \
+            LDFLAGS="-static -Wl,--gc-sections"
+          file package/nes-emulator/src/nesd | grep -F "statically linked"
+          ! readelf -l package/nes-emulator/src/nesd | grep -F INTERP
+          ! readelf -d package/nes-emulator/src/nesd | grep -F NEEDED
+
+      - name: Black-box regressions
+        run: python3 tests/integration.py --binary package/nes-emulator/src/nesd

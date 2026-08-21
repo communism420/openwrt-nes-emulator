@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.adb binary
+*.apk binary
+*.gz binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.webp binary
+
+package/nes-emulator/src/play.html.h linguist-generated=true

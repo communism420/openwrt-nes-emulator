@@ -1,0 +1,3210 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+	<meta name="referrer" content="no-referrer">
+	<title>OpenWrt NES</title>
+	<style>
+		* { box-sizing: border-box }
+		body {
+			margin: 0;
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			background: #0d0d0d;
+			color: #eee;
+			font-family: system-ui, sans-serif;
+		}
+		h1 { margin: .5rem 0; font-size: 1rem; font-weight: 600 }
+		.badge, .hint {
+			max-width: 36rem;
+			padding: 0 1rem;
+			text-align: center;
+			font-size: .72rem;
+			line-height: 1.4;
+			opacity: .65;
+		}
+		#status { min-height: 1.2rem; margin: .35rem; font-size: .8rem }
+		#game-stage {
+			width: 100%;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+		}
+		.screen-frame {
+			position: relative;
+			width: 96vw;
+			max-width: 512px;
+			height: 72vw;
+			max-height: 384px;
+			aspect-ratio: 4 / 3;
+			flex: none;
+			overflow: hidden;
+			border: 2px solid #333;
+			border-radius: 4px;
+			background: #000;
+		}
+		.screen-frame[data-display-mode="16-9"] {
+			height: 54vw;
+			max-height: 288px;
+			aspect-ratio: 16 / 9;
+		}
+		#screen, #fps-osd {
+			position: absolute;
+			inset: 0;
+			display: block;
+			width: 100%;
+			height: 100%;
+			border: 0;
+			image-rendering: pixelated;
+			image-rendering: crisp-edges;
+		}
+		#screen {
+			z-index: 0;
+			background: #000;
+			touch-action: none;
+		}
+		#fps-osd {
+			z-index: 1;
+			background: transparent;
+			pointer-events: none;
+		}
+		#fps-osd[hidden] { display: none }
+		.display-toolbar {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			justify-content: center;
+			align-items: center;
+			margin: 8px;
+		}
+		.display-toolbar label {
+			font-size: .8rem;
+			font-weight: 600;
+		}
+		#display-mode {
+			padding: 8px;
+			max-width: 100%;
+			border: 1px solid #444;
+			border-radius: 6px;
+			background: #1a1a1a;
+			color: #eee;
+		}
+		#display-message {
+			min-height: 1.2rem;
+			max-width: min(96vw, 36rem);
+			flex: 1 0 100%;
+			padding: 0 .5rem;
+			color: #ffd27d;
+			font-size: .78rem;
+			text-align: center;
+			pointer-events: none;
+		}
+		#display-message:empty { display: none }
+		.actions {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			justify-content: center;
+			align-items: center;
+			margin: 8px;
+		}
+		button, label.file {
+			padding: 10px 14px;
+			border: 0;
+			border-radius: 8px;
+			background: #333;
+			color: #fff;
+			font-weight: 600;
+			cursor: pointer;
+			touch-action: none;
+			user-select: none;
+		}
+		button:disabled { cursor: default; opacity: .45 }
+		button.down { background: #3d7acc }
+		label.file { background: #2d5a27 }
+		label.file input { display: none }
+		.touch-controls { width: 100% }
+		.touch-controls[hidden] { display: none !important }
+		.pad {
+			display: grid;
+			grid-template-columns: repeat(3, 64px);
+			gap: 8px;
+			margin: 10px auto;
+		}
+		.pad button { height: 56px }
+		#roms, #states { width: min(96vw, 32rem); margin: .4rem auto }
+		#rom-list, #state-slot, #state-label {
+			width: 100%;
+			padding: 8px;
+			border: 1px solid #444;
+			border-radius: 6px;
+			background: #1a1a1a;
+			color: #eee;
+		}
+		#states {
+			padding: 10px;
+			border: 1px solid #333;
+			border-radius: 8px;
+			background: #141414;
+		}
+		#states h2 { margin: 0 0 8px; font-size: 1rem }
+		.state-fields {
+			display: grid;
+			grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+			gap: 8px;
+		}
+		#state-message {
+			min-height: 1.2rem;
+			margin: .25rem 0 0;
+			font-size: .78rem;
+			color: #ffd27d;
+		}
+		#controls-panel {
+			width: min(96vw, 36rem);
+			margin: .4rem auto 1rem;
+			padding: 12px;
+			border: 1px solid #444;
+			border-radius: 8px;
+			background: #181818;
+		}
+		#controls-panel[hidden] { display: none }
+		.controls-header {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			justify-content: space-between;
+		}
+		.controls-header h2 { margin: 0; font-size: 1rem }
+		.controls-grid {
+			display: grid;
+			grid-template-columns: minmax(5rem, 1fr) repeat(2, minmax(7rem, 1.4fr));
+			gap: 8px;
+			align-items: center;
+			margin: 12px 0;
+		}
+		.controls-grid .heading {
+			font-size: .72rem;
+			font-weight: 700;
+			opacity: .7;
+		}
+		button.binding {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		button.binding.capturing {
+			background: #8a5a18;
+			outline: 2px solid #ffc45c;
+		}
+		#controls-message {
+			min-height: 1.2rem;
+			margin: .35rem 0;
+			font-size: .8rem;
+			color: #ffd27d;
+		}
+		/* Runtime state is primary: unknown fullscreen pseudo-classes must not
+		 * invalidate these rules on browsers with unforgiving selector lists. */
+		#game-stage.fullscreen-active {
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			min-width: 0;
+			min-height: 0;
+			margin: 0;
+			padding: env(safe-area-inset-top) env(safe-area-inset-right)
+				env(safe-area-inset-bottom) env(safe-area-inset-left);
+			display: flex;
+			justify-content: center;
+			overflow: hidden;
+			background: #000;
+		}
+		#game-stage.fullscreen-active .screen-frame {
+			/* Explicit non-aspect-ratio fallback until the JS content-box fit runs. */
+			width: 96vw;
+			max-width: 512px;
+			height: 72vw;
+			max-height: 384px;
+			flex: none;
+			border: 0;
+			border-radius: 0;
+		}
+		#game-stage.fullscreen-active .screen-frame[data-display-mode="16-9"] {
+			height: 54vw;
+			max-height: 288px;
+		}
+		#game-stage.fullscreen-active .display-toolbar {
+			position: absolute;
+			top: auto;
+			right: auto;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			left: 50%;
+			transform: translateX(-50%);
+			z-index: 4;
+			max-width: calc(100vw - 16px);
+			margin: 0;
+			padding: 6px;
+			border-radius: 8px;
+			background: rgb(0 0 0 / 72%);
+		}
+		#game-stage.fullscreen-active[data-touch-controls="visible"] .display-toolbar {
+			top: max(8px, env(safe-area-inset-top));
+			right: auto;
+			bottom: auto;
+			left: max(8px, env(safe-area-inset-left));
+			transform: none;
+			flex-direction: column;
+			align-items: stretch;
+			width: calc(100vw - 64px);
+			max-width: 13rem;
+			box-sizing: border-box;
+		}
+		#game-stage.fullscreen-active .touch-controls {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			z-index: 3;
+			display: flex;
+			align-items: flex-end;
+			justify-content: space-between;
+			gap: 8px;
+			padding: 8px max(8px, env(safe-area-inset-right))
+				8px max(8px, env(safe-area-inset-left));
+			pointer-events: none;
+		}
+		#game-stage.fullscreen-active .pad {
+			grid-template-columns: repeat(3, clamp(44px, 10vw, 64px));
+			gap: clamp(4px, 1vw, 8px);
+			margin: 0;
+			pointer-events: none;
+		}
+		#game-stage.fullscreen-active .pad button {
+			height: clamp(44px, 9vw, 56px);
+			pointer-events: auto;
+			background: rgb(51 51 51 / 78%);
+		}
+		#game-stage.fullscreen-active .touch-action-buttons {
+			justify-content: flex-end;
+			margin: 0;
+			pointer-events: none;
+		}
+		#game-stage.fullscreen-active .touch-action-buttons button {
+			padding: clamp(9px, 2vw, 14px);
+			pointer-events: auto;
+			background: rgb(51 51 51 / 78%);
+		}
+		#game-stage:fullscreen {
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			min-width: 0;
+			min-height: 0;
+			margin: 0;
+			padding: env(safe-area-inset-top) env(safe-area-inset-right)
+				env(safe-area-inset-bottom) env(safe-area-inset-left);
+			display: flex;
+			justify-content: center;
+			overflow: hidden;
+			background: #000;
+		}
+		#game-stage:fullscreen .screen-frame {
+			width: 96vw;
+			max-width: 512px;
+			height: 72vw;
+			max-height: 384px;
+			flex: none;
+			border: 0;
+			border-radius: 0;
+		}
+		#game-stage:fullscreen .screen-frame[data-display-mode="16-9"] {
+			height: 54vw;
+			max-height: 288px;
+		}
+		#game-stage:fullscreen .display-toolbar {
+			position: absolute;
+			top: auto;
+			right: auto;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			left: 50%;
+			transform: translateX(-50%);
+			z-index: 4;
+			max-width: calc(100vw - 16px);
+			margin: 0;
+			padding: 6px;
+			border-radius: 8px;
+			background: rgb(0 0 0 / 72%);
+		}
+		#game-stage:fullscreen[data-touch-controls="visible"] .display-toolbar {
+			top: max(8px, env(safe-area-inset-top));
+			right: auto;
+			bottom: auto;
+			left: max(8px, env(safe-area-inset-left));
+			transform: none;
+			flex-direction: column;
+			align-items: stretch;
+			width: calc(100vw - 64px);
+			max-width: 13rem;
+			box-sizing: border-box;
+		}
+		#game-stage:fullscreen .touch-controls {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			z-index: 3;
+			display: flex;
+			align-items: flex-end;
+			justify-content: space-between;
+			gap: 8px;
+			padding: 8px max(8px, env(safe-area-inset-right))
+				8px max(8px, env(safe-area-inset-left));
+			pointer-events: none;
+		}
+		#game-stage:fullscreen .pad {
+			grid-template-columns: repeat(3, clamp(44px, 10vw, 64px));
+			gap: clamp(4px, 1vw, 8px);
+			margin: 0;
+			pointer-events: none;
+		}
+		#game-stage:fullscreen .pad button {
+			height: clamp(44px, 9vw, 56px);
+			pointer-events: auto;
+			background: rgb(51 51 51 / 78%);
+		}
+		#game-stage:fullscreen .touch-action-buttons {
+			justify-content: flex-end;
+			margin: 0;
+			pointer-events: none;
+		}
+		#game-stage:fullscreen .touch-action-buttons button {
+			padding: clamp(9px, 2vw, 14px);
+			pointer-events: auto;
+			background: rgb(51 51 51 / 78%);
+		}
+		#game-stage:-webkit-full-screen {
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			min-width: 0;
+			min-height: 0;
+			margin: 0;
+			padding: env(safe-area-inset-top) env(safe-area-inset-right)
+				env(safe-area-inset-bottom) env(safe-area-inset-left);
+			display: flex;
+			justify-content: center;
+			overflow: hidden;
+			background: #000;
+		}
+		#game-stage:-webkit-full-screen .screen-frame {
+			width: 96vw;
+			max-width: 512px;
+			height: 72vw;
+			max-height: 384px;
+			flex: none;
+			border: 0;
+			border-radius: 0;
+		}
+		#game-stage:-webkit-full-screen .screen-frame[data-display-mode="16-9"] {
+			height: 54vw;
+			max-height: 288px;
+		}
+		#game-stage:-webkit-full-screen .display-toolbar {
+			position: absolute;
+			top: auto;
+			right: auto;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			left: 50%;
+			transform: translateX(-50%);
+			z-index: 4;
+			max-width: calc(100vw - 16px);
+			margin: 0;
+			padding: 6px;
+			border-radius: 8px;
+			background: rgb(0 0 0 / 72%);
+		}
+		#game-stage:-webkit-full-screen[data-touch-controls="visible"] .display-toolbar {
+			top: max(8px, env(safe-area-inset-top));
+			right: auto;
+			bottom: auto;
+			left: max(8px, env(safe-area-inset-left));
+			transform: none;
+			flex-direction: column;
+			align-items: stretch;
+			width: calc(100vw - 64px);
+			max-width: 13rem;
+			box-sizing: border-box;
+		}
+		#game-stage:-webkit-full-screen .touch-controls {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: max(8px, env(safe-area-inset-bottom));
+			z-index: 3;
+			display: flex;
+			align-items: flex-end;
+			justify-content: space-between;
+			gap: 8px;
+			padding: 8px max(8px, env(safe-area-inset-right))
+				8px max(8px, env(safe-area-inset-left));
+			pointer-events: none;
+		}
+		#game-stage:-webkit-full-screen .pad {
+			grid-template-columns: repeat(3, clamp(44px, 10vw, 64px));
+			gap: clamp(4px, 1vw, 8px);
+			margin: 0;
+			pointer-events: none;
+		}
+		#game-stage:-webkit-full-screen .pad button {
+			height: clamp(44px, 9vw, 56px);
+			pointer-events: auto;
+			background: rgb(51 51 51 / 78%);
+		}
+		#game-stage:-webkit-full-screen .touch-action-buttons {
+			justify-content: flex-end;
+			margin: 0;
+			pointer-events: none;
+		}
+		#game-stage:-webkit-full-screen .touch-action-buttons button {
+			padding: clamp(9px, 2vw, 14px);
+			pointer-events: auto;
+			background: rgb(51 51 51 / 78%);
+		}
+		@media (max-width: 430px) {
+			.state-fields { grid-template-columns: 1fr }
+			.controls-grid {
+				grid-template-columns: minmax(4rem, .8fr) repeat(2, minmax(0, 1fr));
+			}
+			button.binding { padding: 10px 6px }
+		}
+	</style>
+</head>
+<body>
+	<div class="badge">Router CPU: FCEUmm + software render + optional JPEG · Browser: display + audio + input</div>
+	<h1>OpenWrt NES</h1>
+	<div id="status" role="status">initializing…</div>
+	<section id="game-stage" data-touch-controls="visible"
+		aria-label="NES game display and controls">
+		<div id="screen-frame" class="screen-frame" data-display-mode="4-3">
+			<canvas id="screen" width="256" height="240"></canvas>
+			<canvas id="fps-osd" width="256" height="240"
+				aria-hidden="true" hidden></canvas>
+		</div>
+		<div class="display-toolbar">
+			<label for="display-mode">Picture</label>
+			<select id="display-mode" aria-label="Picture aspect ratio">
+				<option value="4-3">4:3 (original display)</option>
+				<option value="16-9">16:9 (stretch)</option>
+			</select>
+			<button type="button" id="btn-fullscreen"
+				aria-controls="game-stage" aria-pressed="false">Fullscreen</button>
+			<output id="display-message" role="status"
+				aria-live="polite"></output>
+		</div>
+		<div id="touch-controls" class="touch-controls">
+			<div class="pad" role="group" aria-label="D-pad">
+				<span></span><button type="button" data-control="up">↑</button><span></span>
+				<button type="button" data-control="left">←</button>
+				<button type="button" data-control="select">Sel</button>
+				<button type="button" data-control="right">→</button>
+				<span></span><button type="button" data-control="down">↓</button><span></span>
+			</div>
+			<div class="actions touch-action-buttons" role="group"
+				aria-label="NES action buttons">
+				<button type="button" data-control="b">B</button>
+				<button type="button" data-control="a">A</button>
+				<button type="button" data-control="start">Start</button>
+			</div>
+		</div>
+	</section>
+	<div class="actions">
+		<button type="button" id="btn-start">Start</button>
+		<button type="button" id="btn-pause">Pause</button>
+		<button type="button" id="btn-reset">Reset</button>
+		<button type="button" id="btn-mute">Mute</button>
+		<button type="button" id="btn-controls"
+			aria-controls="controls-panel" aria-expanded="false">Controls</button>
+		<label class="file">Upload ROM
+			<input type="file" id="upload" accept=".nes,.fds,.unf,.unif,.NES">
+		</label>
+	</div>
+	<div id="roms">
+		<select id="rom-list" aria-label="ROM on router">
+			<option value="">— ROM on router —</option>
+		</select>
+		<div class="actions">
+			<button type="button" id="btn-load">Load</button>
+			<button type="button" id="btn-refresh">Refresh</button>
+		</div>
+	</div>
+	<section id="states" aria-labelledby="states-title">
+		<h2 id="states-title">Save states</h2>
+		<div class="state-fields">
+			<select id="state-slot" aria-label="Save-state slot">
+				<option value="1">Slot 1 — Empty</option>
+				<option value="2">Slot 2 — Empty</option>
+				<option value="3">Slot 3 — Empty</option>
+				<option value="4">Slot 4 — Empty</option>
+				<option value="5">Slot 5 — Empty</option>
+				<option value="6">Slot 6 — Empty</option>
+				<option value="7">Slot 7 — Empty</option>
+				<option value="8">Slot 8 — Empty</option>
+				<option value="9">Slot 9 — Empty</option>
+				<option value="10">Slot 10 — Empty</option>
+			</select>
+			<input id="state-label" type="text" maxlength="23"
+				placeholder="Optional label" aria-label="Save-state label">
+		</div>
+		<div class="actions">
+			<button type="button" id="btn-state-save">Save state</button>
+			<button type="button" id="btn-state-load">Load state</button>
+			<button type="button" id="btn-state-delete">Delete</button>
+			<button type="button" id="btn-state-refresh">Refresh</button>
+		</div>
+		<div id="state-message" role="status" aria-live="polite"></div>
+		<p class="hint">
+			Ten full-machine slots are stored on the router for each ROM.
+			They include CPU, memory, video, audio and mapper state.
+		</p>
+	</section>
+	<p class="hint">
+		Keyboard bindings can be changed with Controls and are saved in this browser.
+		Standard browser gamepads are supported. Click Start once to enable sound.
+	</p>
+	<section id="controls-panel" aria-labelledby="controls-title" hidden>
+		<div class="controls-header">
+			<h2 id="controls-title">Keyboard controls</h2>
+			<button type="button" id="btn-controls-close">Close</button>
+		</div>
+		<p class="hint">
+			Bindings use physical key positions and are stored for this browser and
+			router address. Click a binding and press a key. Backspace or Delete
+			clears it; Escape cancels. Browser and operating-system shortcuts may
+			not be available to games.
+		</p>
+		<div class="controls-grid">
+			<span class="heading">NES button</span>
+			<span class="heading">Primary</span>
+			<span class="heading">Alternate</span>
+			<span>Up</span>
+			<button type="button" class="binding" id="binding-up-0"
+				data-binding-control="up" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-up-1"
+				data-binding-control="up" data-binding-slot="1"></button>
+			<span>Down</span>
+			<button type="button" class="binding" id="binding-down-0"
+				data-binding-control="down" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-down-1"
+				data-binding-control="down" data-binding-slot="1"></button>
+			<span>Left</span>
+			<button type="button" class="binding" id="binding-left-0"
+				data-binding-control="left" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-left-1"
+				data-binding-control="left" data-binding-slot="1"></button>
+			<span>Right</span>
+			<button type="button" class="binding" id="binding-right-0"
+				data-binding-control="right" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-right-1"
+				data-binding-control="right" data-binding-slot="1"></button>
+			<span>B</span>
+			<button type="button" class="binding" id="binding-b-0"
+				data-binding-control="b" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-b-1"
+				data-binding-control="b" data-binding-slot="1"></button>
+			<span>A</span>
+			<button type="button" class="binding" id="binding-a-0"
+				data-binding-control="a" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-a-1"
+				data-binding-control="a" data-binding-slot="1"></button>
+			<span>Select</span>
+			<button type="button" class="binding" id="binding-select-0"
+				data-binding-control="select" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-select-1"
+				data-binding-control="select" data-binding-slot="1"></button>
+			<span>Start</span>
+			<button type="button" class="binding" id="binding-start-0"
+				data-binding-control="start" data-binding-slot="0"></button>
+			<button type="button" class="binding" id="binding-start-1"
+				data-binding-control="start" data-binding-slot="1"></button>
+		</div>
+		<div id="controls-message" role="status" aria-live="polite"></div>
+		<div class="actions">
+			<button type="button" id="btn-controls-reset">Restore defaults</button>
+		</div>
+	</section>
+	<script>
+		'use strict';
+
+		const MAX_ROM_SIZE = 16 * 1024 * 1024;
+		const CONNECT_TIMEOUT_MS = 9000;
+		const HEARTBEAT_INTERVAL_MS = 1000;
+		const SERVER_SILENCE_TIMEOUT_MS = 9000;
+		const HEARTBEAT_ACK_FRESHNESS_MS = 3500;
+		const MAX_PENDING_HEARTBEATS = 8;
+		const JPEG_DECODE_TIMEOUT_MS = 2000;
+		const FULLSCREEN_TIMEOUT_MS = 5000;
+		const RECONNECT_BASE_MS = 500;
+		const RECONNECT_MAX_MS = 8000;
+		const OFFLINE_RECONNECT_MIN_MS = 6000;
+		const OFFLINE_RECONNECT_MAX_MS = 8000;
+		const STABLE_CONNECTION_MS = 5000;
+		const MAX_SOCKET_BUFFERED_BYTES = 64 * 1024;
+		const MAX_OUTSTANDING_JPEG_DECODES = 2;
+		const AUDIO_INITIAL_LEAD_SECONDS = .06;
+		const AUDIO_RECOVERY_LEAD_SECONDS = .02;
+		const AUDIO_MIN_SCHEDULE_LEAD_SECONDS = .005;
+		const AUDIO_MAX_SCHEDULE_LEAD_SECONDS = .18;
+		const UPLOAD_TIMEOUT_BASE_MS = 40000;
+		const UPLOAD_TIMEOUT_BYTES_PER_SECOND = 8 * 1024;
+		const UPLOAD_TIMEOUT_MAX_MS = 1810000;
+		/* Original 5x7 numeric glyphs for the canvas OSD; no browser font is used. */
+		const FPS_GLYPHS = Object.freeze({
+			'0': Object.freeze([
+				'01110', '10001', '10011', '10101', '11001', '10001', '01110'
+			]),
+			'1': Object.freeze([
+				'00100', '01100', '00100', '00100', '00100', '00100', '01110'
+			]),
+			'2': Object.freeze([
+				'01110', '10001', '00001', '00010', '00100', '01000', '11111'
+			]),
+			'3': Object.freeze([
+				'11110', '00001', '00001', '01110', '00001', '00001', '11110'
+			]),
+			'4': Object.freeze([
+				'00010', '00110', '01010', '10010', '11111', '00010', '00010'
+			]),
+			'5': Object.freeze([
+				'11111', '10000', '10000', '11110', '00001', '00001', '11110'
+			]),
+			'6': Object.freeze([
+				'01110', '10000', '10000', '11110', '10001', '10001', '01110'
+			]),
+			'7': Object.freeze([
+				'11111', '00001', '00010', '00100', '01000', '01000', '01000'
+			]),
+			'8': Object.freeze([
+				'01110', '10001', '10001', '01110', '10001', '10001', '01110'
+			]),
+			'9': Object.freeze([
+				'01110', '10001', '10001', '01111', '00001', '00001', '01110'
+			]),
+			'.': Object.freeze([
+				'00000', '00000', '00000', '00000', '00000', '00100', '00100'
+			])
+		});
+		const canvas = document.getElementById('screen');
+		const context = canvas.getContext('2d', { alpha: false });
+		const fpsOsd = document.getElementById('fps-osd');
+		const fpsOsdContext = fpsOsd.getContext('2d', { alpha: true });
+		const statusNode = document.getElementById('status');
+		const touchControlsNode = document.getElementById('touch-controls');
+		const gameStage = document.getElementById('game-stage');
+		const screenFrame = document.getElementById('screen-frame');
+		const displayModeSelect = document.getElementById('display-mode');
+		const fullscreenButton = document.getElementById('btn-fullscreen');
+		const displayMessageNode = document.getElementById('display-message');
+		function bootstrapAuthToken() {
+			const params = new URLSearchParams(location.search);
+			const hashParams = new URLSearchParams(location.hash.slice(1));
+			const suppliedToken = hashParams.get('token') || '';
+			const addressContainsToken =
+				params.has('token') || hashParams.has('token');
+			if (suppliedToken) {
+				try {
+					sessionStorage.setItem('nes-auth-token', suppliedToken);
+				}
+				catch (error) {
+					/* Keep the token in memory when browser storage is blocked. */
+				}
+			}
+			if (addressContainsToken) {
+				/* Query tokens are scrubbed but deliberately never accepted. */
+				params.delete('token');
+				hashParams.delete('token');
+				const query = params.toString();
+				const hash = hashParams.toString();
+				history.replaceState(null, '', location.pathname +
+					(query ? '?' + query : '') + (hash ? '#' + hash : ''));
+			}
+			if (suppliedToken)
+				return suppliedToken;
+			try {
+				return sessionStorage.getItem('nes-auth-token') || '';
+			}
+			catch (error) {
+				/* Direct visits remain unauthenticated when storage is blocked. */
+				return '';
+			}
+		}
+		const authToken = bootstrapAuthToken();
+		const authHeaders = {
+			'Authorization': 'Bearer ' + authToken,
+			'Content-Type': 'application/json'
+		};
+
+		let socket = null;
+		let reconnectTimer = 0;
+		let connectTimer = 0;
+		let heartbeatTimer = 0;
+		let heartbeatSequence = 0;
+		const pendingHeartbeats = new Map();
+		let lastAcceptedHeartbeatSeq = 0;
+		let reconnectDelay = RECONNECT_BASE_MS;
+		let lastHeartbeatAck = 0;
+		let socketOpenedAt = 0;
+		let connectionValidated = false;
+		let networkOnline = navigator.onLine !== false;
+		let muted = false;
+		let audioContext = null;
+		let audioGain = null;
+		let audioSuspendPending = null;
+		let audioResumePending = null;
+		let audioLifecycleGeneration = 0;
+		let nextAudioTime = 0;
+		const activeAudioSources = new Set();
+		let imageData = null;
+		let videoEpoch = 0;
+		let videoCodec = null;
+		let outstandingJpegDecodes = 0;
+		const jpegWorkerEpochs = new Set();
+		const quarantinedJpegEpochs = new Set();
+		let jpegRecoveryInFlight = false;
+		let pendingJpeg = null;
+		let pendingRaw = null;
+		let rawPaintFrame = 0;
+		let pageActive = true;
+		let streamRequested = false;
+		let fpsCounterEnabled = false;
+		let fpsSampleTimer = 0;
+		let fpsPaintedFrames = 0;
+		let fpsSampleStarted = 0;
+		let fpsSampleGeneration = 0;
+		let fpsOsdValue = '';
+		let displayPreferenceGeneration = 0;
+		let actionBusy = false;
+		let stateRefreshGeneration = 0;
+		let localStateAction = 0;
+		let currentGameLoaded = false;
+		let currentRomPath = '';
+		let stateSlots = Array.from({ length: 10 }, (_, index) => ({
+			slot: index + 1,
+			exists: false,
+			loadable: false,
+			modified: 0,
+			size: 0,
+			label: ''
+		}));
+		let gamepadFrame = 0;
+		let gamepadMask = 0;
+		let windowFocused = typeof document.hasFocus !== 'function' ||
+			document.hasFocus();
+		let sentMask = -1;
+		const activeControls = new Map();
+		const activePointerButtons = new Map();
+		const CONTROL_IDS = Object.freeze({
+			b: 0,
+			select: 2,
+			start: 3,
+			up: 4,
+			down: 5,
+			left: 6,
+			right: 7,
+			a: 8
+		});
+		const GAMEPAD_CONTROLS = Object.freeze([
+			Object.freeze(['gp:a', CONTROL_IDS.a]),
+			Object.freeze(['gp:b', CONTROL_IDS.b]),
+			Object.freeze(['gp:select', CONTROL_IDS.select]),
+			Object.freeze(['gp:start', CONTROL_IDS.start]),
+			Object.freeze(['gp:up', CONTROL_IDS.up]),
+			Object.freeze(['gp:down', CONTROL_IDS.down]),
+			Object.freeze(['gp:left', CONTROL_IDS.left]),
+			Object.freeze(['gp:right', CONTROL_IDS.right])
+		]);
+		const CONTROL_DEFINITIONS = Object.freeze([
+			{ name: 'up', label: 'Up' },
+			{ name: 'down', label: 'Down' },
+			{ name: 'left', label: 'Left' },
+			{ name: 'right', label: 'Right' },
+			{ name: 'b', label: 'B' },
+			{ name: 'a', label: 'A' },
+			{ name: 'select', label: 'Select' },
+			{ name: 'start', label: 'Start' }
+		]);
+		const DEFAULT_KEY_BINDINGS = Object.freeze({
+			up: ['ArrowUp', 'KeyW'],
+			down: ['ArrowDown', 'KeyS'],
+			left: ['ArrowLeft', 'KeyA'],
+			right: ['ArrowRight', 'KeyD'],
+			b: ['KeyZ', null],
+			a: ['KeyX', null],
+			select: ['ShiftLeft', 'ShiftRight'],
+			start: ['Enter', null]
+		});
+		const KEY_BINDINGS_STORAGE_KEY = 'openwrt-nes-key-bindings-v1';
+		const DISPLAY_MODE_STORAGE_KEY = 'openwrt-nes-display-mode-v1';
+		let bindingsLoadWarning = '';
+		let keyBindings = loadKeyBindings();
+		let keyMap = buildKeyMap(keyBindings);
+		let bindingCapture = null;
+		let displayModeLoadWarning = '';
+		let displayMode = loadDisplayMode();
+		let fullscreenTransition = false;
+		let fullscreenTransitionTimer = 0;
+		let fullscreenTransitionFinish = null;
+		let fullscreenFitFrame = 0;
+
+		function setStatus(text) {
+			statusNode.textContent = text;
+		}
+
+		function setDisplayMessage(text) {
+			displayMessageNode.textContent = text || '';
+		}
+
+		function normalizeStoredDisplayMode(value) {
+			if (!value || value.version !== 1 ||
+			    (value.mode !== '4-3' && value.mode !== '16-9'))
+				return null;
+			return value.mode;
+		}
+
+		function loadDisplayMode() {
+			let raw;
+			try {
+				raw = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
+			}
+			catch (error) {
+				displayModeLoadWarning =
+					'Picture mode could not be read from browser storage; 4:3 is active.';
+				return '4-3';
+			}
+			if (raw === null)
+				return '4-3';
+
+			let parsed = null;
+			try {
+				parsed = JSON.parse(raw);
+			}
+			catch (error) {
+				/* Invalid JSON follows the same fallback as an unknown mode. */
+			}
+			const normalized = normalizeStoredDisplayMode(parsed);
+			if (normalized)
+				return normalized;
+
+			displayModeLoadWarning =
+				'Saved picture mode was invalid and has been reset to 4:3.';
+			try {
+				window.localStorage.setItem(
+					DISPLAY_MODE_STORAGE_KEY,
+					JSON.stringify({ version: 1, mode: '4-3' })
+				);
+			}
+			catch (error) {
+				displayModeLoadWarning += ' Browser storage is unavailable.';
+			}
+			return '4-3';
+		}
+
+		function applyDisplayMode(mode, persist) {
+			const normalized = mode === '16-9' ? '16-9' : '4-3';
+			displayMode = normalized;
+			screenFrame.dataset.displayMode = normalized;
+			displayModeSelect.value = normalized;
+			scheduleFullscreenFit();
+			if (!persist)
+				return true;
+			try {
+				window.localStorage.setItem(
+					DISPLAY_MODE_STORAGE_KEY,
+					JSON.stringify({ version: 1, mode: normalized })
+				);
+				setDisplayMessage('');
+				return true;
+			}
+			catch (error) {
+				setDisplayMessage(
+					'Picture mode is active for this tab, but browser storage is unavailable.');
+				return false;
+			}
+		}
+
+		function currentFullscreenElement() {
+			return document.fullscreenElement ||
+				document.webkitFullscreenElement || null;
+		}
+
+		function setFullscreenLayout(active) {
+			if (active)
+				gameStage.classList.add('fullscreen-active');
+			else
+				gameStage.classList.remove('fullscreen-active');
+			return active;
+		}
+
+		function fitDisplayBox(availableWidth, availableHeight, mode) {
+			const width = Number.isFinite(availableWidth) && availableWidth > 0
+				? availableWidth : 0;
+			const height = Number.isFinite(availableHeight) && availableHeight > 0
+				? availableHeight : 0;
+			if (width === 0 || height === 0)
+				return { width: 0, height: 0 };
+			const ratio = mode === '16-9' ? 16 / 9 : 4 / 3;
+			if (width / height > ratio)
+				return { width: height * ratio, height };
+			return { width, height: width / ratio };
+		}
+
+		function clearFullscreenFit() {
+			for (const property of ['width', 'max-width', 'height', 'max-height'])
+				screenFrame.style.removeProperty(property);
+		}
+
+		function cancelFullscreenFit() {
+			if (fullscreenFitFrame)
+				cancelAnimationFrame(fullscreenFitFrame);
+			fullscreenFitFrame = 0;
+			clearFullscreenFit();
+		}
+
+		function fullscreenContentBox() {
+			const style = window.getComputedStyle(gameStage);
+			const pixels = value => {
+				const parsed = Number.parseFloat(value);
+				return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+			};
+			return {
+				width: Math.max(0, gameStage.clientWidth -
+					pixels(style.paddingLeft) - pixels(style.paddingRight)),
+				height: Math.max(0, gameStage.clientHeight -
+					pixels(style.paddingTop) - pixels(style.paddingBottom))
+			};
+		}
+
+		function updateFullscreenFit() {
+			if (!pageActive || currentFullscreenElement() !== gameStage) {
+				clearFullscreenFit();
+				return false;
+			}
+			const box = fullscreenContentBox();
+			const fitted = fitDisplayBox(box.width, box.height, displayMode);
+			if (fitted.width < 1 || fitted.height < 1)
+				return false;
+
+			const width = fitted.width + 'px';
+			const height = fitted.height + 'px';
+			screenFrame.style.setProperty('width', width);
+			screenFrame.style.setProperty('max-width', width);
+			screenFrame.style.setProperty('height', height);
+			screenFrame.style.setProperty('max-height', height);
+			return true;
+		}
+
+		function scheduleFullscreenFit() {
+			if (fullscreenFitFrame) {
+				cancelAnimationFrame(fullscreenFitFrame);
+				fullscreenFitFrame = 0;
+			}
+			const active = pageActive &&
+				currentFullscreenElement() === gameStage;
+			setFullscreenLayout(active);
+			if (!active) {
+				clearFullscreenFit();
+				return;
+			}
+			updateFullscreenFit();
+			fullscreenFitFrame = requestAnimationFrame(() => {
+				fullscreenFitFrame = 0;
+				updateFullscreenFit();
+			});
+		}
+
+		function fullscreenApi() {
+			if (typeof gameStage.requestFullscreen === 'function' &&
+			    typeof document.exitFullscreen === 'function' &&
+			    document.fullscreenEnabled !== false) {
+				return {
+					request: () => gameStage.requestFullscreen(),
+					exit: () => document.exitFullscreen()
+				};
+			}
+			if (typeof gameStage.webkitRequestFullscreen === 'function' &&
+			    typeof document.webkitExitFullscreen === 'function' &&
+			    document.webkitFullscreenEnabled !== false) {
+				return {
+					request: () => gameStage.webkitRequestFullscreen(),
+					exit: () => document.webkitExitFullscreen()
+				};
+			}
+			return null;
+		}
+
+		function updateFullscreenButton() {
+			const supported = fullscreenApi() !== null;
+			const active = currentFullscreenElement() === gameStage;
+			fullscreenButton.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+			fullscreenButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+			fullscreenButton.disabled = !supported || fullscreenTransition;
+			fullscreenButton.title = supported ? '' :
+				'Fullscreen is not available in this browser.';
+		}
+
+		function reportFullscreenFailure(error) {
+			fullscreenTransition = false;
+			scheduleFullscreenFit();
+			updateFullscreenButton();
+			const message = error && error.message
+				? String(error.message).trim().replace(/[.!?]+$/, '') : '';
+			const detail = message ? ': ' + message : '';
+			setDisplayMessage('Fullscreen request failed' + detail + '.');
+			return false;
+		}
+
+		function toggleFullscreen() {
+			if (fullscreenTransition)
+				return Promise.resolve(false);
+			const api = fullscreenApi();
+			if (!api)
+				return Promise.resolve(reportFullscreenFailure(
+					new Error('not supported by this browser')));
+
+			releaseAllControls();
+			fullscreenTransition = true;
+			updateFullscreenButton();
+			return new Promise(resolve => {
+				let settled = false;
+				const finish = (success, error) => {
+					if (settled)
+						return;
+					settled = true;
+					clearTimeout(fullscreenTransitionTimer);
+					fullscreenTransitionTimer = 0;
+					if (fullscreenTransitionFinish === finish)
+						fullscreenTransitionFinish = null;
+					if (!success) {
+						resolve(reportFullscreenFailure(error));
+						return;
+					}
+					fullscreenTransition = false;
+					scheduleFullscreenFit();
+					updateFullscreenButton();
+					setDisplayMessage('');
+					resolve(true);
+				};
+				fullscreenTransitionFinish = finish;
+				fullscreenTransitionTimer = setTimeout(() => finish(
+					false, new Error('the browser did not complete it in time')
+				), FULLSCREEN_TIMEOUT_MS);
+				let operation;
+				try {
+					operation = currentFullscreenElement() === gameStage
+						? api.exit() : api.request();
+				}
+				catch (error) {
+					finish(false, error);
+					return;
+				}
+				Promise.resolve(operation).then(
+					() => finish(true),
+					error => finish(false, error)
+				);
+			});
+		}
+
+		function handleFullscreenChange() {
+			scheduleFullscreenFit();
+			const finish = fullscreenTransitionFinish;
+			if (finish)
+				finish(true);
+			fullscreenTransition = false;
+			releaseAllControls();
+			updateFullscreenButton();
+			if (displayMessageNode.textContent.startsWith('Fullscreen request failed'))
+				setDisplayMessage('');
+		}
+
+		function handleFullscreenError() {
+			const error = new Error('the browser rejected the transition');
+			if (fullscreenTransitionFinish)
+				fullscreenTransitionFinish(false, error);
+			else
+				reportFullscreenFailure(error);
+		}
+
+		function formatFpsValue(measured) {
+			if (!Number.isFinite(measured) || measured < 0)
+				return '';
+			return Math.min(measured, 999.9).toFixed(1);
+		}
+
+		function drawFpsOsd() {
+			fpsOsdContext.clearRect(0, 0, fpsOsd.width, fpsOsd.height);
+			if (!fpsCounterEnabled || fpsOsd.hidden || !fpsOsdValue ||
+			    !pageActive || document.hidden)
+				return;
+
+			/* Match FCEUX's 40px-wide top-right OSD zone and its 2px inset. */
+			const originX = Math.max(0, fpsOsd.width - 40) + 2;
+			const originY = 6;
+			const glyphAdvance = 6;
+			fpsOsdContext.fillStyle = '#000000';
+			for (let index = 0; index < fpsOsdValue.length; index++) {
+				const glyph = FPS_GLYPHS[fpsOsdValue[index]];
+				if (!glyph)
+					continue;
+				for (let row = 0; row < glyph.length; row++) {
+					for (let column = 0; column < glyph[row].length; column++) {
+						if (glyph[row][column] === '1') {
+							fpsOsdContext.fillRect(
+								originX + index * glyphAdvance + column - 2,
+								originY + row - 2,
+								5,
+								5
+							);
+						}
+					}
+				}
+			}
+
+			fpsOsdContext.fillStyle = '#303040';
+			for (let index = 0; index < fpsOsdValue.length; index++) {
+				const glyph = FPS_GLYPHS[fpsOsdValue[index]];
+				if (!glyph)
+					continue;
+				for (let row = 0; row < glyph.length; row++) {
+					for (let column = 0; column < glyph[row].length; column++) {
+						if (glyph[row][column] === '1') {
+							fpsOsdContext.fillRect(
+								originX + index * glyphAdvance + column - 1,
+								originY + row - 1,
+								3,
+								3
+							);
+						}
+					}
+				}
+			}
+
+			/* Paint foreground last so adjacent outline pixels cannot cover it. */
+			fpsOsdContext.fillStyle = '#ffffff';
+			for (let index = 0; index < fpsOsdValue.length; index++) {
+				const glyph = FPS_GLYPHS[fpsOsdValue[index]];
+				if (!glyph)
+					continue;
+				for (let row = 0; row < glyph.length; row++) {
+					for (let column = 0; column < glyph[row].length; column++) {
+						if (glyph[row][column] === '1') {
+							fpsOsdContext.fillRect(
+								originX + index * glyphAdvance + column,
+								originY + row,
+								1,
+								1
+							);
+						}
+					}
+				}
+			}
+		}
+
+		function syncCanvasDimensions(width, height) {
+			let resized = false;
+			if (canvas.width !== width || canvas.height !== height) {
+				canvas.width = width;
+				canvas.height = height;
+				imageData = null;
+				resized = true;
+			}
+			if (fpsOsd.width !== width || fpsOsd.height !== height) {
+				fpsOsd.width = width;
+				fpsOsd.height = height;
+				fpsOsdContext.imageSmoothingEnabled = false;
+				resized = true;
+			}
+			if (resized)
+				drawFpsOsd();
+			return resized;
+		}
+
+		function stopFpsSampling() {
+			fpsSampleGeneration++;
+			if (fpsSampleTimer) {
+				clearInterval(fpsSampleTimer);
+				fpsSampleTimer = 0;
+			}
+			fpsPaintedFrames = 0;
+			fpsSampleStarted = 0;
+			fpsOsdValue = '';
+			drawFpsOsd();
+		}
+
+		function canSampleFps() {
+			return fpsCounterEnabled && pageActive && !document.hidden &&
+				streamRequested && socket && socket.readyState === WebSocket.OPEN;
+		}
+
+		function updateFpsCounter(generation) {
+			if (generation !== fpsSampleGeneration)
+				return;
+			if (!canSampleFps()) {
+				stopFpsSampling();
+				return;
+			}
+			const now = performance.now();
+			const elapsed = now - fpsSampleStarted;
+			if (!(elapsed > 0))
+				return;
+			const measured = fpsPaintedFrames * 1000 / elapsed;
+			fpsOsdValue = formatFpsValue(measured);
+			fpsPaintedFrames = 0;
+			fpsSampleStarted = now;
+			drawFpsOsd();
+		}
+
+		function startFpsSampling() {
+			if (fpsSampleTimer || !canSampleFps())
+				return;
+			fpsPaintedFrames = 0;
+			fpsSampleStarted = performance.now();
+			const generation = ++fpsSampleGeneration;
+			fpsSampleTimer = setInterval(
+				() => updateFpsCounter(generation),
+				1000
+			);
+		}
+
+		function setFpsCounterEnabled(enabled) {
+			const requested = enabled === true;
+			const changed = fpsCounterEnabled !== requested;
+			fpsCounterEnabled = requested;
+			fpsOsd.hidden = !requested;
+			if (!requested) {
+				stopFpsSampling();
+				return;
+			}
+			if (changed) {
+				fpsOsdValue = '';
+				drawFpsOsd();
+			}
+			startFpsSampling();
+		}
+
+		function recordDisplayedFrame() {
+			if (fpsSampleTimer)
+				fpsPaintedFrames++;
+		}
+
+		function ensureAudio() {
+			if (audioContext && audioContext.state === 'closed') {
+				audioContext = null;
+				audioGain = null;
+				audioSuspendPending = null;
+				audioResumePending = null;
+			}
+			if (!audioContext) {
+				const Audio = window.AudioContext || window.webkitAudioContext;
+				if (!Audio)
+					return null;
+				try {
+					audioContext = new Audio();
+				}
+				catch (error) {
+					return null;
+				}
+				audioGain = audioContext.createGain();
+				audioGain.gain.value = muted ? 0 : 1;
+				audioGain.connect(audioContext.destination);
+				nextAudioTime = audioContext.currentTime +
+					AUDIO_INITIAL_LEAD_SECONDS;
+			}
+			if (!audioMayRun())
+				suspendExistingAudio();
+			else if (audioContext.state !== 'running')
+				resumeExistingAudio();
+			return audioContext;
+		}
+
+		function suspendExistingAudio() {
+			audioLifecycleGeneration++;
+			const audio = audioContext;
+			if (!audio || audio.state === 'closed')
+				return;
+			if (audioSuspendPending && audioSuspendPending.audio === audio)
+				return;
+			if (audio.state !== 'running')
+				return;
+			let operation;
+			try {
+				operation = audio.suspend();
+			}
+			catch (error) {
+				return;
+			}
+			const pending = Promise.resolve(operation).catch(() => {});
+			const record = { audio, pending };
+			audioSuspendPending = record;
+			pending.then(() => {
+				if (audioSuspendPending === record)
+					audioSuspendPending = null;
+			});
+		}
+
+		function audioMayRun() {
+			const transportOpen = socket && socket.readyState === WebSocket.OPEN;
+			return pageActive && !document.hidden && (networkOnline || transportOpen);
+		}
+
+		function resumeExistingAudio() {
+			const audio = audioContext;
+			if (!audio || audio.state === 'closed')
+				return Promise.resolve();
+			if (audioResumePending && audioResumePending.audio === audio) {
+				if (audioResumePending.generation !== audioLifecycleGeneration)
+					audioResumePending.reconcile = true;
+				return audioResumePending.pending;
+			}
+			const generation = audioLifecycleGeneration;
+			const suspend = audioSuspendPending && audioSuspendPending.audio === audio
+				? audioSuspendPending.pending : Promise.resolve();
+			const record = { audio, generation, pending: null, reconcile: false };
+			const pending = suspend.then(() => {
+				if (audioContext !== audio || generation !== audioLifecycleGeneration ||
+				    !audioMayRun() || audio.state === 'closed')
+					return;
+				if (audio.state === 'running') {
+					nextAudioTime = audio.currentTime +
+						AUDIO_INITIAL_LEAD_SECONDS;
+					return;
+				}
+				let operation;
+				try {
+					operation = audio.resume();
+				}
+				catch (error) {
+					return;
+				}
+				return Promise.resolve(operation).catch(() => {});
+			}).then(() => {
+				if (audioContext !== audio)
+					return;
+				if (!audioMayRun()) {
+					if (audio.state === 'running')
+						suspendExistingAudio();
+					return;
+				}
+				if (generation !== audioLifecycleGeneration)
+					record.reconcile = true;
+				if (audio.state === 'running')
+					nextAudioTime = audio.currentTime +
+						AUDIO_INITIAL_LEAD_SECONDS;
+			}).catch(() => {});
+			record.pending = pending;
+			audioResumePending = record;
+			pending.then(() => {
+				if (audioResumePending === record)
+					audioResumePending = null;
+				if (record.reconcile && audioContext === audio && audioMayRun())
+					resumeExistingAudio();
+			});
+			return pending;
+		}
+
+		function clearScheduledAudio() {
+			for (const source of activeAudioSources) {
+				try { source.stop(); }
+				catch (error) { /* A source may already have ended. */ }
+			}
+			activeAudioSources.clear();
+			if (audioContext && audioContext.state !== 'closed')
+				nextAudioTime = audioContext.currentTime +
+					AUDIO_INITIAL_LEAD_SECONDS;
+			else
+				nextAudioTime = 0;
+		}
+
+		function closeSocket(candidate) {
+			if (!candidate)
+				return;
+			try { candidate.close(); }
+			catch (error) { /* The transport may already be unusable. */ }
+		}
+
+		function sendSocketJson(candidate, message) {
+			if (!candidate || candidate.readyState !== WebSocket.OPEN)
+				return false;
+			const buffered = Number(candidate.bufferedAmount);
+			if (Number.isFinite(buffered) && buffered > MAX_SOCKET_BUFFERED_BYTES) {
+				abandonTransport(candidate,
+					'connection output congested · reconnecting…', true);
+				return false;
+			}
+			try {
+				candidate.send(JSON.stringify(message));
+				return true;
+			}
+			catch (error) {
+				abandonTransport(candidate, 'connection write failed · retrying…', true);
+				return false;
+			}
+		}
+
+		function inputMask() {
+			let mask = 0;
+			for (const id of activeControls.values())
+				mask |= 1 << id;
+			return mask >>> 0;
+		}
+
+		function sendInput(force) {
+			const mask = inputMask();
+			if (!force && mask === sentMask)
+				return;
+			if (socket && socket.readyState === WebSocket.OPEN &&
+			    sendSocketJson(socket, { t: 'input', mask }))
+				sentMask = mask;
+		}
+
+		function setControl(source, id, down) {
+			if (down)
+				activeControls.set(source, id);
+			else
+				activeControls.delete(source);
+			sendInput(false);
+		}
+
+		function releaseAllControls() {
+			const shouldSend = activeControls.size || sentMask !== 0;
+			activeControls.clear();
+			activePointerButtons.clear();
+			gamepadMask = 0;
+			document.querySelectorAll('button.down').forEach(button => {
+				button.classList.remove('down');
+				button.setAttribute('aria-pressed', 'false');
+			});
+			if (shouldSend)
+				sendInput(true);
+		}
+
+		function releasePointerControls() {
+			if (!activePointerButtons.size)
+				return;
+			for (const [source, button] of activePointerButtons) {
+				activeControls.delete(source);
+				button.classList.remove('down');
+				button.setAttribute('aria-pressed', 'false');
+			}
+			activePointerButtons.clear();
+			sendInput(false);
+		}
+
+		function setTouchControlsVisible(visible) {
+			const hidden = visible !== true;
+			if (hidden)
+				releasePointerControls();
+			touchControlsNode.hidden = hidden;
+			gameStage.dataset.touchControls = hidden ? 'hidden' : 'visible';
+		}
+
+		function applyDisplayPreferences(status) {
+			if (!status || typeof status !== 'object')
+				return false;
+			let applied = false;
+			if (typeof status.show_fps === 'boolean') {
+				setFpsCounterEnabled(status.show_fps);
+				applied = true;
+			}
+			if (typeof status.show_touch_controls === 'boolean') {
+				setTouchControlsVisible(status.show_touch_controls);
+				applied = true;
+			}
+			return applied;
+		}
+
+		function hasDisplayPreferences(status) {
+			return status && typeof status === 'object' &&
+				(typeof status.show_fps === 'boolean' ||
+				 typeof status.show_touch_controls === 'boolean');
+		}
+
+		function cloneDefaultBindings() {
+			const result = {};
+			for (const definition of CONTROL_DEFINITIONS)
+				result[definition.name] = DEFAULT_KEY_BINDINGS[definition.name].slice();
+			return result;
+		}
+
+		function isValidKeyCode(code) {
+			return typeof code === 'string' &&
+				code.length > 0 && code.length <= 40 &&
+				code !== 'Unidentified' &&
+				/^[A-Za-z][A-Za-z0-9]*$/.test(code);
+		}
+
+		function normalizeStoredBindings(value) {
+			if (!value || value.version !== 1 ||
+			    !value.bindings || typeof value.bindings !== 'object')
+				return null;
+			const normalized = {};
+			const seen = new Set();
+			for (const definition of CONTROL_DEFINITIONS) {
+				const slots = value.bindings[definition.name];
+				if (!Array.isArray(slots) || slots.length !== 2)
+					return null;
+				normalized[definition.name] = [];
+				for (const code of slots) {
+					if (code !== null && !isValidKeyCode(code))
+						return null;
+					if (code !== null && seen.has(code))
+						return null;
+					if (code !== null)
+						seen.add(code);
+					normalized[definition.name].push(code);
+				}
+			}
+			return normalized;
+		}
+
+		function loadKeyBindings() {
+			const defaults = cloneDefaultBindings();
+			let raw;
+			try {
+				raw = window.localStorage.getItem(KEY_BINDINGS_STORAGE_KEY);
+			}
+			catch (error) {
+				bindingsLoadWarning =
+					'Controls could not be read from browser storage; defaults are active.';
+				return defaults;
+			}
+			if (raw === null)
+				return defaults;
+
+			let parsed = null;
+			try {
+				parsed = JSON.parse(raw);
+			}
+			catch (error) {
+				/* Invalid JSON follows the same atomic fallback as a bad schema. */
+			}
+			const normalized = normalizeStoredBindings(parsed);
+			if (normalized)
+				return normalized;
+
+			try {
+				window.localStorage.setItem(
+					KEY_BINDINGS_STORAGE_KEY,
+					JSON.stringify({ version: 1, bindings: defaults })
+				);
+				bindingsLoadWarning =
+					'Saved controls were invalid and have been reset to defaults.';
+			}
+			catch (error) {
+				bindingsLoadWarning =
+					'Saved controls were invalid; defaults are active, but browser storage could not be repaired.';
+			}
+			return defaults;
+		}
+
+		function saveKeyBindings() {
+			try {
+				window.localStorage.setItem(
+					KEY_BINDINGS_STORAGE_KEY,
+					JSON.stringify({ version: 1, bindings: keyBindings })
+				);
+				return true;
+			}
+			catch (error) {
+				return false;
+			}
+		}
+
+		function buildKeyMap(bindings) {
+			const result = Object.create(null);
+			for (const definition of CONTROL_DEFINITIONS) {
+				for (const code of bindings[definition.name]) {
+					if (code !== null)
+						result[code] = CONTROL_IDS[definition.name];
+				}
+			}
+			return result;
+		}
+
+		function keyCodeLabel(code) {
+			const labels = {
+				ArrowUp: '↑ Arrow',
+				ArrowDown: '↓ Arrow',
+				ArrowLeft: '← Arrow',
+				ArrowRight: '→ Arrow',
+				ShiftLeft: 'Left Shift',
+				ShiftRight: 'Right Shift',
+				ControlLeft: 'Left Ctrl',
+				ControlRight: 'Right Ctrl',
+				AltLeft: 'Left Alt',
+				AltRight: 'Right Alt',
+				Space: 'Space',
+				Enter: 'Enter',
+				Tab: 'Tab'
+			};
+			if (labels[code])
+				return labels[code];
+			if (/^Key[A-Z]$/.test(code))
+				return code.slice(3);
+			if (/^Digit[0-9]$/.test(code))
+				return code.slice(5);
+			return code;
+		}
+
+		function definitionFor(name) {
+			return CONTROL_DEFINITIONS.find(definition =>
+				definition.name === name);
+		}
+
+		function setControlsMessage(message) {
+			document.getElementById('controls-message').textContent = message || '';
+		}
+
+		function renderBindings() {
+			for (const definition of CONTROL_DEFINITIONS) {
+				for (let slot = 0; slot < 2; slot++) {
+					const button = document.getElementById(
+						'binding-' + definition.name + '-' + slot);
+					const code = keyBindings[definition.name][slot];
+					const capturing = bindingCapture &&
+						bindingCapture.name === definition.name &&
+						bindingCapture.slot === slot;
+					button.textContent = capturing
+						? 'Press a key…'
+						: code === null ? 'Unbound' : keyCodeLabel(code);
+					button.title = capturing
+						? 'Waiting for a key'
+						: code || 'No key assigned';
+					button.setAttribute(
+						'aria-label',
+						definition.label + ' ' +
+						(slot === 0 ? 'primary' : 'alternate') + ': ' +
+						(capturing
+							? 'press a key'
+							: code === null ? 'unbound' : keyCodeLabel(code))
+					);
+					if (capturing)
+						button.classList.add('capturing');
+					else
+						button.classList.remove('capturing');
+				}
+			}
+		}
+
+		function finishBindingChange(message) {
+			bindingCapture = null;
+			keyMap = buildKeyMap(keyBindings);
+			releaseAllControls();
+			renderBindings();
+			if (saveKeyBindings())
+				setControlsMessage(message + ' Saved in this browser.');
+			else
+				setControlsMessage(
+					message + ' Active for this tab, but browser storage is unavailable.');
+		}
+
+		function beginBindingCapture(name, slot) {
+			if (!definitionFor(name) || (slot !== 0 && slot !== 1))
+				return;
+			releaseAllControls();
+			bindingCapture = { name, slot };
+			renderBindings();
+			setControlsMessage(
+				'Press a key for ' + definitionFor(name).label +
+				', or use Backspace/Delete to clear it.');
+		}
+
+		function cancelBindingCapture(message) {
+			if (!bindingCapture)
+				return;
+			bindingCapture = null;
+			renderBindings();
+			setControlsMessage(message || 'Binding change cancelled.');
+		}
+
+		function captureKey(code) {
+			const target = bindingCapture;
+			if (!target)
+				return;
+			for (const definition of CONTROL_DEFINITIONS) {
+				for (let slot = 0; slot < 2; slot++) {
+					if (keyBindings[definition.name][slot] === code &&
+					    (definition.name !== target.name || slot !== target.slot)) {
+						setControlsMessage(
+							keyCodeLabel(code) + ' is already assigned to ' +
+							definition.label + '. Choose another key or clear that binding.');
+						return;
+					}
+				}
+			}
+			keyBindings[target.name][target.slot] = code;
+			finishBindingChange(
+				definitionFor(target.name).label + ' is now ' + keyCodeLabel(code) + '.');
+		}
+
+		function clearCapturedBinding() {
+			const target = bindingCapture;
+			if (!target)
+				return;
+			keyBindings[target.name][target.slot] = null;
+			const label = definitionFor(target.name).label;
+			const unbound = keyBindings[target.name].every(code => code === null);
+			finishBindingChange(unbound
+				? label + ' has no keyboard binding; gamepad and any enabled on-screen controls still work.'
+				: label + ' binding cleared.');
+		}
+
+		function setControlsPanel(open) {
+			const panel = document.getElementById('controls-panel');
+			const toggle = document.getElementById('btn-controls');
+			panel.hidden = !open;
+			toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+			if (!open) {
+				cancelBindingCapture('');
+				toggle.focus();
+			}
+			else {
+				if (bindingsLoadWarning) {
+					setControlsMessage(bindingsLoadWarning);
+					bindingsLoadWarning = '';
+				}
+				document.getElementById('binding-up-0').focus();
+			}
+		}
+
+		function releasePointer(event) {
+			const source = 'pointer:' + event.pointerId;
+			const button = activePointerButtons.get(source);
+			if (!button)
+				return;
+			if (event.preventDefault)
+				event.preventDefault();
+			activePointerButtons.delete(source);
+			button.classList.remove('down');
+			button.setAttribute('aria-pressed', 'false');
+			setControl(source, 0, false);
+		}
+
+		function bindButton(button) {
+			const id = CONTROL_IDS[button.dataset.control];
+			if (id === undefined)
+				return;
+			button.setAttribute('aria-pressed', 'false');
+			button.addEventListener('pointerdown', event => {
+				if (touchControlsNode.hidden)
+					return;
+				event.preventDefault();
+				const source = 'pointer:' + event.pointerId;
+				const previous = activePointerButtons.get(source);
+				if (previous && previous !== button) {
+					previous.classList.remove('down');
+					previous.setAttribute('aria-pressed', 'false');
+				}
+				try {
+					button.setPointerCapture(event.pointerId);
+				}
+				catch (error) {
+					/* The pointer can disappear before capture on some touch UAs. */
+				}
+				button.classList.add('down');
+				button.setAttribute('aria-pressed', 'true');
+				activePointerButtons.set(source, button);
+				setControl(source, id, true);
+				ensureAudio();
+			});
+			button.addEventListener('pointerup', releasePointer);
+			button.addEventListener('pointercancel', releasePointer);
+			button.addEventListener('lostpointercapture', releasePointer);
+			button.addEventListener('contextmenu', event => event.preventDefault());
+		}
+
+		document.querySelectorAll('[data-control]').forEach(bindButton);
+		window.addEventListener('pointerup', releasePointer);
+		window.addEventListener('pointercancel', releasePointer);
+		document.querySelectorAll('[data-binding-control]').forEach(button => {
+			button.addEventListener('click', () => beginBindingCapture(
+				button.dataset.bindingControl,
+				Number(button.dataset.bindingSlot)
+			));
+		});
+		document.getElementById('btn-controls').onclick = () => {
+			const panel = document.getElementById('controls-panel');
+			setControlsPanel(panel.hidden);
+		};
+		document.getElementById('btn-controls-close').onclick = () =>
+			setControlsPanel(false);
+		document.getElementById('btn-controls-reset').onclick = () => {
+			keyBindings = cloneDefaultBindings();
+			finishBindingChange('Default keyboard controls restored.');
+		};
+		renderBindings();
+		applyDisplayMode(displayMode, false);
+		if (displayModeLoadWarning)
+			setDisplayMessage(displayModeLoadWarning);
+		displayModeSelect.onchange = () =>
+			applyDisplayMode(displayModeSelect.value, true);
+		fullscreenButton.onclick = toggleFullscreen;
+		document.addEventListener('fullscreenchange', handleFullscreenChange);
+		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+		document.addEventListener('fullscreenerror', handleFullscreenError);
+		document.addEventListener('webkitfullscreenerror', handleFullscreenError);
+		window.addEventListener('resize', scheduleFullscreenFit);
+		window.addEventListener('orientationchange', scheduleFullscreenFit);
+		if (window.visualViewport &&
+		    typeof window.visualViewport.addEventListener === 'function')
+			window.visualViewport.addEventListener('resize', scheduleFullscreenFit);
+		scheduleFullscreenFit();
+		updateFullscreenButton();
+
+		window.addEventListener('keydown', event => {
+			if (bindingCapture) {
+				event.preventDefault();
+				event.stopPropagation();
+				if (event.repeat)
+					return;
+				if (event.code === 'Escape') {
+					cancelBindingCapture();
+					return;
+				}
+				if (event.code === 'Backspace' || event.code === 'Delete') {
+					clearCapturedBinding();
+					return;
+				}
+				if (!isValidKeyCode(event.code)) {
+					setControlsMessage('That key cannot be used as a game binding.');
+					return;
+				}
+				captureKey(event.code);
+				return;
+			}
+			const id = keyMap[event.code];
+			if (id === undefined)
+				return;
+			if (event.target instanceof Element &&
+			    event.target.closest('button, input, select, textarea, a, [contenteditable="true"]'))
+				return;
+			event.preventDefault();
+			setControl('key:' + event.code, id, true);
+			ensureAudio();
+		});
+		window.addEventListener('keyup', event => {
+			const source = 'key:' + event.code;
+			const id = keyMap[event.code];
+			if (id === undefined && !activeControls.has(source))
+				return;
+			if (!activeControls.has(source) &&
+			    event.target instanceof Element &&
+			    event.target.closest('button, input, select, textarea, a, [contenteditable="true"]'))
+				return;
+			event.preventDefault();
+			setControl(source, id, false);
+		});
+		window.addEventListener('blur', () => {
+			windowFocused = false;
+			releaseAllControls();
+		});
+		window.addEventListener('focus', () => {
+			windowFocused = true;
+		});
+		document.addEventListener('visibilitychange', () => {
+			if (document.hidden) {
+				releaseAllControls();
+				suspendStream();
+				suspendExistingAudio();
+				setStatus('stream paused while this tab is hidden');
+			}
+			else if (pageActive) {
+				networkOnline = navigator.onLine !== false;
+				resumeExistingAudio();
+				if (streamRequested) {
+					if (networkOnline)
+						connect();
+					else
+						scheduleReconnect(
+							'browser reports offline · probing the router…', true
+						);
+				}
+			}
+		});
+		window.addEventListener('offline', () => {
+			networkOnline = false;
+			if (socket && (socket.readyState === WebSocket.OPEN ||
+			    socket.readyState === WebSocket.CONNECTING))
+				return;
+			releaseAllControls();
+			suspendStream();
+			suspendExistingAudio();
+			if (streamRequested)
+				scheduleReconnect(
+					'browser reports offline · probing the router…', true
+				);
+		});
+		window.addEventListener('online', () => {
+			networkOnline = true;
+			resumeExistingAudio();
+			if (pageActive && !document.hidden && streamRequested)
+				scheduleReconnect('network restored · reconnecting…', true);
+		});
+
+		function gamepadButtonPressed(pad, index) {
+			return Boolean(pad.buttons[index] && pad.buttons[index].pressed);
+		}
+
+		function updateGamepad() {
+			if (!pageActive)
+				return;
+			if (!windowFocused || document.hidden) {
+				gamepadFrame = requestAnimationFrame(updateGamepad);
+				return;
+			}
+			const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+			let pad = null;
+			let nextMask = 0;
+			for (let index = 0; index < pads.length; index++) {
+				if (pads[index]) {
+					pad = pads[index];
+					break;
+				}
+			}
+			if (pad) {
+				if (gamepadButtonPressed(pad, 0))
+					nextMask |= 1 << CONTROL_IDS.a;
+				if (gamepadButtonPressed(pad, 1))
+					nextMask |= 1 << CONTROL_IDS.b;
+				if (gamepadButtonPressed(pad, 8))
+					nextMask |= 1 << CONTROL_IDS.select;
+				if (gamepadButtonPressed(pad, 9))
+					nextMask |= 1 << CONTROL_IDS.start;
+				if (gamepadButtonPressed(pad, 12) || pad.axes[1] < -.5)
+					nextMask |= 1 << CONTROL_IDS.up;
+				if (gamepadButtonPressed(pad, 13) || pad.axes[1] > .5)
+					nextMask |= 1 << CONTROL_IDS.down;
+				if (gamepadButtonPressed(pad, 14) || pad.axes[0] < -.5)
+					nextMask |= 1 << CONTROL_IDS.left;
+				if (gamepadButtonPressed(pad, 15) || pad.axes[0] > .5)
+					nextMask |= 1 << CONTROL_IDS.right;
+			}
+			if (nextMask !== gamepadMask) {
+				gamepadMask = nextMask;
+				for (const [source, id] of GAMEPAD_CONTROLS) {
+					if (nextMask & (1 << id))
+						activeControls.set(source, id);
+					else
+						activeControls.delete(source);
+				}
+				sendInput(false);
+			}
+			gamepadFrame = requestAnimationFrame(updateGamepad);
+		}
+		gamepadFrame = requestAnimationFrame(updateGamepad);
+
+		function uploadTimeoutMs(size) {
+			const bytes = Number(size);
+			const transferMs = Number.isFinite(bytes) && bytes > 0
+				? Math.ceil(bytes * 1000 / UPLOAD_TIMEOUT_BYTES_PER_SECOND) : 0;
+			return Math.min(
+				UPLOAD_TIMEOUT_MAX_MS,
+				UPLOAD_TIMEOUT_BASE_MS + transferMs
+			);
+		}
+
+		async function fetchWithTimeout(resource, options, timeoutMs, responseType) {
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), timeoutMs);
+			try {
+				const response = await fetch(resource, {
+					...(options || {}),
+					signal: controller.signal
+				});
+				const body = responseType === 'text'
+					? await response.text()
+					: await response.json();
+				return { response, body };
+			}
+			catch (error) {
+				if (error.name === 'AbortError')
+					throw new Error('request timed out');
+				throw error;
+			}
+			finally {
+				clearTimeout(timer);
+			}
+		}
+
+		async function api(path, body, timeoutMs) {
+			const result = await fetchWithTimeout(path, {
+				method: 'POST',
+				headers: authHeaders,
+				body: JSON.stringify(body || {})
+			}, timeoutMs || 10000, 'text');
+			const response = result.response;
+			const text = result.body;
+			let reply;
+			try {
+				reply = text ? JSON.parse(text) : {};
+			}
+			catch (error) {
+				throw new Error(text.slice(0, 120) || 'HTTP ' + response.status);
+			}
+			if (!response.ok || reply.ok === false || reply.error)
+				throw new Error(reply.error || 'HTTP ' + response.status);
+			return reply;
+		}
+
+		async function refreshDisplayPreferences() {
+			const generation = ++displayPreferenceGeneration;
+			try {
+				const result = await fetchWithTimeout('/api/status', {
+					method: 'GET',
+					headers: authHeaders
+				}, 10000, 'text');
+				const response = result.response;
+				const text = result.body;
+				let status;
+				try {
+					status = text ? JSON.parse(text) : {};
+				}
+				catch (error) {
+					return false;
+				}
+				if (!response.ok || !status || typeof status !== 'object' ||
+				    status.error)
+					return false;
+				if (!pageActive || generation !== displayPreferenceGeneration)
+					return false;
+				return applyDisplayPreferences(status);
+			}
+			catch (error) {
+				/* Markup defaults remain visible if the preference probe fails. */
+				return false;
+			}
+		}
+
+		function playPCM(packet, byteOffset, channels, rate, frames) {
+			if ((channels !== 1 && channels !== 2) ||
+			    rate < 8000 || rate > 192000 || frames < 1 || frames > 8192)
+				return false;
+			const expected = frames * channels * 2;
+			if (!(packet instanceof ArrayBuffer) ||
+			    !Number.isInteger(byteOffset) || byteOffset < 0 ||
+			    byteOffset > packet.byteLength ||
+			    packet.byteLength - byteOffset !== expected)
+				return false;
+
+			const audio = audioContext;
+			if (muted || !audio || !audioGain || audio.state !== 'running') {
+				if (audio && audio.state !== 'closed')
+					nextAudioTime = audio.currentTime +
+						AUDIO_INITIAL_LEAD_SECONDS;
+				return true;
+			}
+
+			const view = new DataView(packet, byteOffset, expected);
+			const buffer = audio.createBuffer(channels, frames, rate);
+			for (let channel = 0; channel < channels; channel++) {
+				const output = buffer.getChannelData(channel);
+				for (let frame = 0; frame < frames; frame++) {
+					const offset = (frame * channels + channel) * 2;
+					output[frame] = view.getInt16(offset, true) / 32768;
+				}
+			}
+			if (!Number.isFinite(nextAudioTime) ||
+			    nextAudioTime > audio.currentTime + AUDIO_MAX_SCHEDULE_LEAD_SECONDS) {
+				/*
+				 * A delayed burst must not play over audio that was already
+				 * scheduled on the old timeline. Drop that timeline and start
+				 * a small fresh jitter buffer instead.
+				 */
+				clearScheduledAudio();
+				nextAudioTime = audio.currentTime + AUDIO_RECOVERY_LEAD_SECONDS;
+			}
+			else if (nextAudioTime <
+			    audio.currentTime + AUDIO_MIN_SCHEDULE_LEAD_SECONDS) {
+				/*
+				 * WebAudio starts a source scheduled in the past immediately, but
+				 * advancing the old timestamp afterwards makes the following PCM
+				 * block overlap it. Rebase a genuine underrun just ahead of the
+				 * hardware clock while leaving already playing sources untouched.
+				 */
+				nextAudioTime = audio.currentTime + AUDIO_RECOVERY_LEAD_SECONDS;
+			}
+			const source = audio.createBufferSource();
+			source.buffer = buffer;
+			source.connect(audioGain);
+			activeAudioSources.add(source);
+			source.onended = () => activeAudioSources.delete(source);
+			const scheduledAt = nextAudioTime;
+			source.start(scheduledAt);
+			nextAudioTime = scheduledAt + buffer.duration;
+			return true;
+		}
+
+		function drawRGB565(packet, byteOffset, width, height) {
+			const pixels = width * height;
+			if (width < 1 || height < 1 || width > 1024 || height > 1024 ||
+			    !(packet instanceof ArrayBuffer) ||
+			    !Number.isInteger(byteOffset) || byteOffset < 0 ||
+			    byteOffset > packet.byteLength ||
+			    packet.byteLength - byteOffset < pixels * 2)
+				return;
+			syncCanvasDimensions(width, height);
+			if (!imageData)
+				imageData = context.createImageData(width, height);
+			const source = new DataView(packet, byteOffset, pixels * 2);
+			const output = imageData.data;
+			for (let pixel = 0, offset = 0; pixel < pixels; pixel++, offset += 4) {
+				const value = source.getUint16(pixel * 2, true);
+				const red = (value >> 11) & 31;
+				const green = (value >> 5) & 63;
+				const blue = value & 31;
+				output[offset] = (red << 3) | (red >> 2);
+				output[offset + 1] = (green << 2) | (green >> 4);
+				output[offset + 2] = (blue << 3) | (blue >> 2);
+				output[offset + 3] = 255;
+			}
+			context.putImageData(imageData, 0, 0);
+			recordDisplayedFrame();
+		}
+
+		function resumePendingJpeg() {
+			if (pendingJpeg && pendingJpeg.epoch === videoEpoch &&
+			    videoCodec === 'jpeg' &&
+			    !quarantinedJpegEpochs.has(videoEpoch) &&
+			    outstandingJpegDecodes < MAX_OUTSTANDING_JPEG_DECODES)
+				void drainJpegQueue(videoEpoch);
+		}
+
+		function closeBitmap(bitmap) {
+			if (!bitmap || typeof bitmap.close !== 'function')
+				return;
+			try { bitmap.close(); }
+			catch (error) { /* A discarded decoder result may already be closed. */ }
+		}
+
+		function releaseJpegDecodeSlot(epoch) {
+			outstandingJpegDecodes = Math.max(0, outstandingJpegDecodes - 1);
+			quarantinedJpegEpochs.delete(epoch);
+			resumePendingJpeg();
+		}
+
+		async function decodeJpegWithDeadline(data, epoch) {
+			if (outstandingJpegDecodes >= MAX_OUTSTANDING_JPEG_DECODES)
+				return { kind: 'capacity' };
+			let operation;
+			try {
+				operation = createImageBitmap(
+					new Blob([data], { type: 'image/jpeg' })
+				);
+			}
+			catch (error) {
+				return { kind: 'error', error };
+			}
+
+			outstandingJpegDecodes++;
+			let expired = false;
+			let timer = 0;
+			const completion = Promise.resolve(operation).then(bitmap => {
+				const late = expired;
+				releaseJpegDecodeSlot(epoch);
+				if (late) {
+					closeBitmap(bitmap);
+					return { kind: 'late' };
+				}
+				if (!bitmap)
+					return { kind: 'error', error: new Error('empty JPEG bitmap') };
+				return { kind: 'bitmap', bitmap };
+			}, error => {
+				const late = expired;
+				releaseJpegDecodeSlot(epoch);
+				return late ? { kind: 'late' } : { kind: 'error', error };
+			});
+			const deadline = new Promise(resolve => {
+				timer = setTimeout(() => {
+					expired = true;
+					resolve({ kind: 'timeout' });
+				}, JPEG_DECODE_TIMEOUT_MS);
+			});
+			const result = await Promise.race([completion, deadline]);
+			clearTimeout(timer);
+			if (result.kind === 'timeout')
+				quarantinedJpegEpochs.add(epoch);
+			return result;
+		}
+
+		async function drawJPEG(data, width, height, epoch) {
+			if (width < 1 || height < 1 || width > 1024 || height > 1024)
+				return 'done';
+			const result = await decodeJpegWithDeadline(data, epoch);
+			if (result.kind === 'timeout' || result.kind === 'capacity')
+				return result.kind;
+			if (result.kind !== 'bitmap') {
+				if (result.kind === 'error' && epoch === videoEpoch &&
+				    videoCodec === 'jpeg')
+					setStatus('invalid JPEG frame');
+				return 'done';
+			}
+
+			const bitmap = result.bitmap;
+			try {
+				if (!pageActive || document.hidden || epoch !== videoEpoch ||
+				    videoCodec !== 'jpeg')
+					return 'done';
+				syncCanvasDimensions(width, height);
+				context.imageSmoothingEnabled = false;
+				context.drawImage(bitmap, 0, 0, width, height);
+				recordDisplayedFrame();
+				jpegRecoveryInFlight = false;
+			}
+			catch (error) {
+				if (epoch === videoEpoch && videoCodec === 'jpeg')
+					setStatus('invalid JPEG frame');
+			}
+			finally {
+				closeBitmap(bitmap);
+			}
+			return 'done';
+		}
+
+		function discardPendingRaw() {
+			pendingRaw = null;
+			if (rawPaintFrame) {
+				cancelAnimationFrame(rawPaintFrame);
+				rawPaintFrame = 0;
+			}
+		}
+
+		function invalidateVideoFrames() {
+			discardPendingRaw();
+			pendingJpeg = null;
+			videoCodec = null;
+			videoEpoch++;
+		}
+
+		function clearDisplayFrame() {
+			context.fillStyle = '#000';
+			context.fillRect(0, 0, canvas.width, canvas.height);
+			imageData = null;
+		}
+
+		function paintPendingRaw() {
+			rawPaintFrame = 0;
+			const frame = pendingRaw;
+			pendingRaw = null;
+			if (!frame || !pageActive || document.hidden ||
+			    frame.epoch !== videoEpoch || videoCodec !== 'raw')
+				return;
+			drawRGB565(
+				frame.packet,
+				frame.byteOffset,
+				frame.width,
+				frame.height
+			);
+		}
+
+		function queueRaw(packet, byteOffset, width, height) {
+			/*
+			 * Raw conversion is intentionally deferred to the browser's next
+			 * paint. A burst can replace this slot, so stale frames never build
+			 * an expensive main-thread conversion backlog.
+			 */
+			if (videoCodec !== 'raw') {
+				pendingJpeg = null;
+				videoCodec = 'raw';
+				videoEpoch++;
+			}
+			pendingRaw = {
+				packet,
+				byteOffset,
+				width,
+				height,
+				epoch: videoEpoch
+			};
+			if (!rawPaintFrame)
+				rawPaintFrame = requestAnimationFrame(paintPendingRaw);
+		}
+
+		async function drainJpegQueue(epoch) {
+			if (jpegWorkerEpochs.has(epoch) || quarantinedJpegEpochs.has(epoch))
+				return;
+			jpegWorkerEpochs.add(epoch);
+			try {
+				while (pendingJpeg && pageActive && epoch === videoEpoch &&
+				       videoCodec === 'jpeg' && pendingJpeg.epoch === epoch) {
+					const frame = pendingJpeg;
+					pendingJpeg = null;
+					const outcome = await drawJPEG(
+						frame.data,
+						frame.width,
+						frame.height,
+						frame.epoch
+					);
+					if (outcome === 'capacity') {
+						if (epoch === videoEpoch && videoCodec === 'jpeg' &&
+						    !pendingJpeg) {
+							pendingJpeg = frame;
+							setStatus(
+								'JPEG decoder unavailable · reload the page or select raw video'
+							);
+						}
+						break;
+					}
+					if (outcome === 'timeout') {
+						if (epoch === videoEpoch && videoCodec === 'jpeg') {
+							if (!jpegRecoveryInFlight && outstandingJpegDecodes <
+							    MAX_OUTSTANDING_JPEG_DECODES && socket) {
+								jpegRecoveryInFlight = true;
+								abandonTransport(socket,
+									'JPEG decoder stalled · reconnecting…', true);
+							}
+							else {
+								setStatus(
+									'JPEG decoder unavailable · reload the page or select raw video'
+								);
+							}
+						}
+						break;
+					}
+				}
+			}
+			finally {
+				jpegWorkerEpochs.delete(epoch);
+			}
+			resumePendingJpeg();
+		}
+
+		function queueJPEG(data, width, height) {
+			/* A newer JPEG supersedes any raw fallback not painted yet. */
+			if (videoCodec !== 'jpeg') {
+				discardPendingRaw();
+				videoCodec = 'jpeg';
+				videoEpoch++;
+			}
+			pendingJpeg = {
+				data,
+				width,
+				height,
+				epoch: videoEpoch
+			};
+			resumePendingJpeg();
+		}
+
+		function handleBinary(buffer) {
+			if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 12)
+				return false;
+			const bytes = new Uint8Array(buffer);
+			const view = new DataView(buffer);
+			const type = bytes[0];
+			if (type === 1) {
+				const width = view.getUint16(2, true);
+				const height = view.getUint16(4, true);
+				if (width > 0 && height > 0 &&
+				    width <= 1024 && height <= 1024 &&
+				    buffer.byteLength === 12 + width * height * 2) {
+					queueRaw(buffer, 12, width, height);
+					return true;
+				}
+			}
+			else if (type === 3) {
+				const width = view.getUint16(2, true);
+				const height = view.getUint16(4, true);
+				const size = view.getUint32(6, true);
+				if (width > 0 && height > 0 && width <= 1024 && height <= 1024 &&
+				    size === buffer.byteLength - 12) {
+					queueJPEG(
+						new Uint8Array(buffer, 12, size),
+						width,
+						height
+					);
+					return true;
+				}
+			}
+			else if (type === 2) {
+				const channels = bytes[1];
+				const rate = view.getUint32(4, true);
+				const frames = view.getUint32(8, true);
+				return playPCM(buffer, 12, channels, rate, frames);
+			}
+			return false;
+		}
+
+		function clearTransportTimers() {
+			if (connectTimer) {
+				clearTimeout(connectTimer);
+				connectTimer = 0;
+			}
+			if (heartbeatTimer) {
+				clearTimeout(heartbeatTimer);
+				heartbeatTimer = 0;
+			}
+		}
+
+		function resetHeartbeatTracking() {
+			heartbeatSequence = 0;
+			pendingHeartbeats.clear();
+			lastAcceptedHeartbeatSeq = 0;
+		}
+
+		function prunePendingHeartbeats(now) {
+			for (const [seq, sentAt] of pendingHeartbeats) {
+				if (now - sentAt > HEARTBEAT_ACK_FRESHNESS_MS)
+					pendingHeartbeats.delete(seq);
+			}
+			while (pendingHeartbeats.size >= MAX_PENDING_HEARTBEATS)
+				pendingHeartbeats.delete(pendingHeartbeats.keys().next().value);
+		}
+
+		function acceptHeartbeatAck(candidate, seq) {
+			if (socket !== candidate || !Number.isSafeInteger(seq) || seq < 1 ||
+			    seq <= lastAcceptedHeartbeatSeq)
+				return false;
+			const sentAt = pendingHeartbeats.get(seq);
+			if (sentAt === undefined)
+				return false;
+			const now = performance.now();
+			if (now < sentAt || now - sentAt > HEARTBEAT_ACK_FRESHNESS_MS) {
+				pendingHeartbeats.delete(seq);
+				return false;
+			}
+			lastAcceptedHeartbeatSeq = seq;
+			for (const pendingSeq of pendingHeartbeats.keys()) {
+				if (pendingSeq <= seq)
+					pendingHeartbeats.delete(pendingSeq);
+			}
+			lastHeartbeatAck = now;
+			if (!connectionValidated &&
+			    lastHeartbeatAck - socketOpenedAt >= STABLE_CONNECTION_MS) {
+				connectionValidated = true;
+				reconnectDelay = RECONNECT_BASE_MS;
+			}
+			return true;
+		}
+
+		function scheduleReconnect(message, immediate) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = 0;
+			if (!pageActive || document.hidden || !streamRequested)
+				return;
+			if (message)
+				setStatus(message);
+			let delay = 0;
+			if (!networkOnline && !immediate) {
+				setStatus('browser reports offline · probing the router…');
+				delay = OFFLINE_RECONNECT_MIN_MS + Math.floor(
+					Math.random() *
+					(OFFLINE_RECONNECT_MAX_MS - OFFLINE_RECONNECT_MIN_MS + 1)
+				);
+			}
+			else if (!immediate) {
+				const jitter = .75 + Math.random() * .5;
+				delay = Math.min(RECONNECT_MAX_MS,
+					Math.max(100, Math.round(reconnectDelay * jitter)));
+				reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+			}
+			reconnectTimer = setTimeout(() => {
+				reconnectTimer = 0;
+				connect();
+			}, delay);
+		}
+
+		function abandonTransport(candidate, message, retry, closeCandidate = true) {
+			if (socket !== candidate) {
+				if (closeCandidate)
+					closeSocket(candidate);
+				return false;
+			}
+			socket = null;
+			clearTransportTimers();
+			resetHeartbeatTracking();
+			sentMask = -1;
+			invalidateVideoFrames();
+			clearScheduledAudio();
+			stopFpsSampling();
+			if (!audioMayRun())
+				suspendExistingAudio();
+			if (closeCandidate)
+				closeSocket(candidate);
+			if (retry)
+				scheduleReconnect(message, false);
+			return true;
+		}
+
+		function heartbeat(candidate) {
+			heartbeatTimer = 0;
+			if (socket !== candidate || candidate.readyState !== WebSocket.OPEN ||
+			    !pageActive || document.hidden || !streamRequested)
+				return;
+			if (performance.now() - lastHeartbeatAck >= SERVER_SILENCE_TIMEOUT_MS) {
+				abandonTransport(candidate,
+					'connection stalled · reconnecting…', true);
+				return;
+			}
+			if (heartbeatSequence >= Number.MAX_SAFE_INTEGER) {
+				abandonTransport(candidate,
+					'heartbeat sequence exhausted · reconnecting…', true);
+				return;
+			}
+			const now = performance.now();
+			prunePendingHeartbeats(now);
+			const seq = ++heartbeatSequence;
+			if (!sendSocketJson(candidate, {
+				t: 'heartbeat',
+				mask: inputMask(),
+				seq
+			}))
+				return;
+			pendingHeartbeats.set(seq, now);
+			heartbeatTimer = setTimeout(
+				() => heartbeat(candidate), HEARTBEAT_INTERVAL_MS
+			);
+		}
+
+		function connect() {
+			if (!pageActive || document.hidden || !streamRequested ||
+			    (socket && (socket.readyState === WebSocket.OPEN ||
+			     socket.readyState === WebSocket.CONNECTING)))
+				return;
+			if (!authToken) {
+				setStatus('Access token missing. Open this page from authenticated LuCI.');
+				return;
+			}
+			clearTimeout(reconnectTimer);
+			reconnectTimer = 0;
+			let nextSocket;
+			try {
+				const url = new URL('/ws', location.href);
+				url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+				url.searchParams.set('token', authToken);
+				nextSocket = new WebSocket(url);
+			}
+			catch (error) {
+				scheduleReconnect('connection failed · retrying…', false);
+				return;
+			}
+			socket = nextSocket;
+			resetHeartbeatTracking();
+			connectionValidated = false;
+			lastHeartbeatAck = performance.now();
+			socketOpenedAt = 0;
+			nextSocket.binaryType = 'arraybuffer';
+			connectTimer = setTimeout(() => {
+				connectTimer = 0;
+				if (socket === nextSocket &&
+				    nextSocket.readyState === WebSocket.CONNECTING) {
+					abandonTransport(nextSocket,
+						'connection timed out · retrying…', true);
+				}
+			}, CONNECT_TIMEOUT_MS);
+			nextSocket.onopen = () => {
+				if (!pageActive || document.hidden || !streamRequested ||
+				    socket !== nextSocket) {
+					closeSocket(nextSocket);
+					return;
+				}
+				if (connectTimer) {
+					clearTimeout(connectTimer);
+					connectTimer = 0;
+				}
+				lastHeartbeatAck = performance.now();
+				socketOpenedAt = lastHeartbeatAck;
+				resumeExistingAudio();
+				setStatus('connected · router software render');
+				if (!sendSocketJson(nextSocket, { t: 'hello' }))
+					return;
+				sendInput(true);
+				if (socket !== nextSocket)
+					return;
+				clearTimeout(heartbeatTimer);
+				heartbeatTimer = setTimeout(
+					() => heartbeat(nextSocket), HEARTBEAT_INTERVAL_MS
+				);
+			};
+			nextSocket.onmessage = event => {
+				if (!pageActive || document.hidden ||
+				    socket !== nextSocket)
+					return;
+				if (typeof event.data !== 'string') {
+					handleBinary(event.data);
+					return;
+				}
+				try {
+					const status = JSON.parse(event.data);
+					if (!status || typeof status !== 'object' ||
+					    (status.t !== 'status' && status.t !== 'heartbeat'))
+						throw new Error('unknown message type');
+					if (status.t === 'heartbeat')
+						acceptHeartbeatAck(nextSocket, status.seq);
+					if (status.t === 'status') {
+						const nextGameLoaded = status.game_loaded === true;
+						const nextRomPath = typeof status.rom_path === 'string'
+							? status.rom_path : '';
+						const identityChanged = nextGameLoaded !== currentGameLoaded ||
+							nextRomPath !== currentRomPath;
+						currentGameLoaded = nextGameLoaded;
+						currentRomPath = nextRomPath;
+						if (identityChanged) {
+							stateRefreshGeneration++;
+							stateSlots = emptyStateSlots();
+							renderStateSlots(true);
+						}
+						if (status.event === 'state-loaded' ||
+						    status.event === 'state-load-fatal') {
+							releaseAllControls();
+							invalidateVideoFrames();
+							clearScheduledAudio();
+							clearDisplayFrame();
+						}
+						if (identityChanged ||
+						    (localStateAction === 0 &&
+						     (status.event === 'state-saved' ||
+						      status.event === 'state-loaded' ||
+						      status.event === 'state-deleted')))
+							void refreshStates();
+						if (status.event === 'state-load-fatal')
+							setStateMessage(
+								'Save-state loading failed and rollback was not possible; emulation stopped.'
+							);
+						if (hasDisplayPreferences(status)) {
+							displayPreferenceGeneration++;
+							applyDisplayPreferences(status);
+						}
+						setStatus(
+							(status.core || 'FCEUmm') + ' · ' +
+							(status.rom || 'no ROM') +
+							(status.paused ? ' · paused' : '') +
+							' · router render'
+						);
+					}
+				}
+				catch (error) {
+					setStatus('invalid server message');
+				}
+			};
+			nextSocket.onerror = () => abandonTransport(
+				nextSocket, 'connection failed · retrying…', true
+			);
+			nextSocket.onclose = () => {
+				abandonTransport(
+					nextSocket,
+					networkOnline ? 'disconnected · retrying…' :
+						'browser reports offline · probing the router…',
+					true,
+					false
+				);
+			};
+		}
+
+		function startStream() {
+			streamRequested = true;
+			if (!pageActive || document.hidden) {
+				setStatus('stream remains stopped while this tab is hidden');
+				return false;
+			}
+			if (!networkOnline &&
+			    (!socket || socket.readyState !== WebSocket.OPEN)) {
+				scheduleReconnect(
+					'browser reports offline · probing the router…', true
+				);
+				return false;
+			}
+			resumeExistingAudio();
+			connect();
+			return true;
+		}
+
+		function suspendStream() {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = 0;
+			clearTransportTimers();
+			const closingSocket = socket;
+			socket = null;
+			resetHeartbeatTracking();
+			sentMask = -1;
+			invalidateVideoFrames();
+			clearScheduledAudio();
+			stopFpsSampling();
+			closeSocket(closingSocket);
+		}
+
+		function setActionBusy(busy) {
+			actionBusy = busy;
+			document.querySelectorAll(
+				'#btn-start, #btn-pause, #btn-reset, #btn-load, #upload'
+			).forEach(element => {
+				element.disabled = busy || !authToken;
+			});
+			updateStateActions();
+		}
+
+		async function runExclusive(action) {
+			if (actionBusy)
+				return false;
+			setActionBusy(true);
+			try {
+				await action();
+				return true;
+			}
+			finally {
+				setActionBusy(false);
+			}
+		}
+
+		function normalizeUploadName(input) {
+			let base = (input || 'upload.nes').replace(/^.*[/\\]/, '');
+			const match = base.match(/\.(nes|fds|unf|unif)$/i);
+			const extension = match ? match[0].toLowerCase() : '.nes';
+			if (match)
+				base = base.slice(0, -match[0].length);
+			base = base
+				.replace(/[^A-Za-z0-9 ._-]+/g, '_')
+				.replace(/^\.+/, '')
+				.trim();
+			if (!base)
+				base = 'upload';
+			base = base.slice(0, 255 - extension.length)
+				.trimEnd()
+				.replace(/\.+$/, '');
+			if (!base)
+				base = 'upload';
+			return base + extension;
+		}
+
+		async function refreshRoms() {
+			const select = document.getElementById('rom-list');
+			try {
+				const result = await fetchWithTimeout('/api/roms', {
+					headers: { 'Authorization': 'Bearer ' + authToken }
+				}, 10000);
+				const response = result.response;
+				const reply = result.body;
+				if (!response.ok || reply.error)
+					throw new Error(reply.error || 'HTTP ' + response.status);
+				const current = select.value;
+				select.replaceChildren(new Option('— ROM on router —', ''));
+				for (const item of reply.roms || []) {
+					const path = typeof item === 'string' ? item : (item.path || item.name);
+					const label = typeof item === 'string' ? item : (item.name || path);
+					const unreadable = typeof item === 'object' &&
+						item !== null && item.readable === false;
+					if (path) {
+						const option = new Option(
+							unreadable ? label + ' — not readable by nesd' : label,
+							path
+						);
+						option.disabled = unreadable;
+						if (unreadable)
+							option.title = item.error ||
+								'Upload through LuCI or set group nesd and mode 0640';
+						select.add(option);
+					}
+				}
+				select.value = current;
+				if (select.selectedOptions && select.selectedOptions[0] &&
+				    select.selectedOptions[0].disabled)
+					select.value = '';
+				select.title = reply.truncated === true
+					? 'The router stopped this ROM scan at its safety limit; narrow the configured directories.'
+					: '';
+				if (reply.truncated === true)
+					setStatus('ROM list truncated at the router scan safety limit');
+			}
+			catch (error) {
+				setStatus('ROM list error: ' + error.message);
+			}
+		}
+
+		function emptyStateSlots() {
+			return Array.from({ length: 10 }, (_, index) => ({
+				slot: index + 1,
+				exists: false,
+				loadable: false,
+				modified: 0,
+				size: 0,
+				label: ''
+			}));
+		}
+
+		function setStateMessage(message) {
+			document.getElementById('state-message').textContent = message || '';
+		}
+
+		function selectedState() {
+			const slot = Number(document.getElementById('state-slot').value);
+			return stateSlots.find(item => item.slot === slot) || null;
+		}
+
+		function formatStateSize(size) {
+			if (!Number.isFinite(size) || size < 1)
+				return 'unknown size';
+			if (size < 1024)
+				return Math.round(size) + ' B';
+			return (size / 1024).toFixed(size < 10240 ? 1 : 0) + ' KiB';
+		}
+
+		function stateOptionText(state) {
+			if (!state.exists)
+				return 'Slot ' + state.slot + ' — Empty';
+			if (!state.loadable)
+				return 'Slot ' + state.slot + ' — Corrupt or incompatible';
+			const timestamp = Number(state.modified) > 0
+				? new Date(Number(state.modified) * 1000).toLocaleString()
+				: 'time unavailable';
+			const label = state.label ? state.label + ' · ' : '';
+			return 'Slot ' + state.slot + ' — ' + label + timestamp;
+		}
+
+		function updateStateActions(copyLabel) {
+			const selected = selectedState();
+			const unavailable = actionBusy || !authToken || !currentGameLoaded;
+			const label = document.getElementById('state-label');
+			document.getElementById('btn-state-save').disabled = unavailable;
+			document.getElementById('btn-state-load').disabled =
+				unavailable || !selected || !selected.loadable;
+			document.getElementById('btn-state-delete').disabled =
+				unavailable || !selected || !selected.exists;
+			document.getElementById('btn-state-refresh').disabled =
+				actionBusy || !authToken;
+			document.getElementById('state-slot').disabled =
+				actionBusy || !authToken;
+			label.disabled = unavailable;
+			if (copyLabel)
+				label.value = selected && selected.loadable ? selected.label : '';
+			if (selected && selected.exists && !selected.loadable)
+				setStateMessage(selected.error ||
+					'This slot is corrupt or incompatible. It can be deleted or overwritten.');
+			else if (copyLabel)
+				setStateMessage('');
+		}
+
+		function renderStateSlots(copyLabel) {
+			const select = document.getElementById('state-slot');
+			const selected = Number(select.value) || 1;
+			select.replaceChildren();
+			for (const state of stateSlots)
+				select.add(new Option(stateOptionText(state), String(state.slot)));
+			select.value = String(
+				stateSlots.some(state => state.slot === selected) ? selected : 1
+			);
+			updateStateActions(copyLabel);
+		}
+
+		async function refreshStates() {
+			const generation = ++stateRefreshGeneration;
+			const expectedRomPath = currentRomPath;
+			try {
+				const result = await fetchWithTimeout('/api/states', {
+					headers: { 'Authorization': 'Bearer ' + authToken }
+				}, 10000);
+				const response = result.response;
+				const reply = result.body;
+				if (!response.ok || reply.error)
+					throw new Error(reply.error || 'HTTP ' + response.status);
+				if (generation !== stateRefreshGeneration)
+					return false;
+				if (expectedRomPath && reply.rom_path !== expectedRomPath)
+					return false;
+				currentGameLoaded = reply.game_loaded === true;
+				currentRomPath = typeof reply.rom_path === 'string'
+					? reply.rom_path : '';
+				const incoming = new Map();
+				for (const item of reply.slots || []) {
+					if (item && Number.isInteger(item.slot) &&
+					    item.slot >= 1 && item.slot <= 10)
+						incoming.set(item.slot, item);
+				}
+				stateSlots = emptyStateSlots().map(empty => {
+					const item = incoming.get(empty.slot);
+					if (!item)
+						return empty;
+					return {
+						slot: empty.slot,
+						exists: item.exists === true,
+						loadable: item.loadable === true,
+						modified: Number(item.modified) || 0,
+						size: Number(item.size) || 0,
+						label: typeof item.label === 'string' ? item.label : '',
+						error: typeof item.error === 'string' ? item.error : ''
+					};
+				});
+				renderStateSlots(true);
+				return true;
+			}
+			catch (error) {
+				if (generation === stateRefreshGeneration)
+					setStateMessage('Save-state list error: ' + error.message);
+				return false;
+			}
+		}
+
+		function prepareForRomChange() {
+			stateRefreshGeneration++;
+			currentRomPath = '';
+			currentGameLoaded = true;
+			stateSlots = emptyStateSlots();
+			renderStateSlots(true);
+		}
+
+		document.getElementById('btn-start').onclick = () => {
+			ensureAudio();
+			return runExclusive(async () => {
+				try {
+					await api('/api/start');
+					startStream();
+				}
+				catch (error) { setStatus('start error: ' + error.message); }
+			});
+		};
+		document.getElementById('btn-pause').onclick = () => {
+			return runExclusive(async () => {
+				try { await api('/api/pause'); }
+				catch (error) { setStatus('pause error: ' + error.message); }
+			});
+		};
+		document.getElementById('btn-reset').onclick = () => {
+			return runExclusive(async () => {
+				try { await api('/api/reset'); }
+				catch (error) { setStatus('reset error: ' + error.message); }
+			});
+		};
+		document.getElementById('btn-mute').onclick = event => {
+			muted = !muted;
+			clearScheduledAudio();
+			if (!muted)
+				ensureAudio();
+			if (audioGain)
+				audioGain.gain.value = muted ? 0 : 1;
+			event.currentTarget.textContent = muted ? 'Unmute' : 'Mute';
+		};
+		document.getElementById('btn-refresh').onclick = refreshRoms;
+		document.getElementById('btn-load').onclick = () => {
+			const path = document.getElementById('rom-list').value;
+			if (!path)
+				return false;
+			ensureAudio();
+			return runExclusive(async () => {
+				try {
+					await api('/api/load', { path });
+					prepareForRomChange();
+					await refreshStates();
+					startStream();
+				}
+				catch (error) { setStatus('load error: ' + error.message); }
+			});
+		};
+		document.getElementById('state-slot').onchange = () =>
+			updateStateActions(true);
+		document.getElementById('btn-state-refresh').onclick = () =>
+			runExclusive(async () => { await refreshStates(); });
+		document.getElementById('btn-state-save').onclick = () => {
+			const selected = selectedState();
+			if (!selected || !currentGameLoaded)
+				return false;
+			const label = document.getElementById('state-label').value.trim();
+			return runExclusive(async () => {
+				localStateAction++;
+				setStateMessage('Saving slot ' + selected.slot + '…');
+				try {
+					const reply = await api('/api/state/save', {
+						slot: selected.slot,
+						label
+					}, 30000);
+					await refreshStates();
+					setStateMessage(
+						'Slot ' + selected.slot + ' saved' +
+						(reply.warning ? ' · ' + reply.warning : '.')
+					);
+				}
+				catch (error) {
+					setStateMessage('Save-state error: ' + error.message);
+				}
+				finally {
+					localStateAction--;
+				}
+			});
+		};
+		document.getElementById('btn-state-load').onclick = () => {
+			const selected = selectedState();
+			if (!selected || !selected.loadable)
+				return false;
+			releaseAllControls();
+			clearScheduledAudio();
+			return runExclusive(async () => {
+				localStateAction++;
+				setStateMessage('Loading slot ' + selected.slot + '…');
+				try {
+					await api('/api/state/load', { slot: selected.slot }, 30000);
+					releaseAllControls();
+					clearScheduledAudio();
+					await refreshStates();
+					setStateMessage('Slot ' + selected.slot + ' loaded.');
+				}
+				catch (error) {
+					setStateMessage('Load-state error: ' + error.message);
+				}
+				finally {
+					localStateAction--;
+				}
+			});
+		};
+		document.getElementById('btn-state-delete').onclick = () => {
+			const selected = selectedState();
+			if (!selected || !selected.exists ||
+			    !window.confirm('Delete save-state slot ' + selected.slot + '?'))
+				return false;
+			return runExclusive(async () => {
+				localStateAction++;
+				setStateMessage('Deleting slot ' + selected.slot + '…');
+				try {
+					const reply = await api('/api/state/delete', {
+						slot: selected.slot
+					}, 30000);
+					await refreshStates();
+					setStateMessage(
+						'Slot ' + selected.slot + ' deleted' +
+						(reply.warning ? ' · ' + reply.warning : '.')
+					);
+				}
+				catch (error) {
+					setStateMessage('Delete-state error: ' + error.message);
+				}
+				finally {
+					localStateAction--;
+				}
+			});
+		};
+		document.getElementById('upload').onchange = async event => {
+			const input = event.target;
+			const file = event.target.files && event.target.files[0];
+			if (!file)
+				return;
+			if (file.size < 16 || file.size > MAX_ROM_SIZE) {
+				setStatus('ROM size must be between 16 bytes and 16 MiB');
+				input.value = '';
+				return;
+			}
+			const name = normalizeUploadName(file.name);
+			ensureAudio();
+			const started = await runExclusive(async () => {
+				setStatus('uploading ' + name + '…');
+				try {
+					const result = await fetchWithTimeout(
+						'/api/upload?name=' + encodeURIComponent(name),
+						{
+							method: 'POST',
+							headers: {
+								'Authorization': 'Bearer ' + authToken,
+								'Content-Type': 'application/octet-stream'
+							},
+							body: file
+						},
+						uploadTimeoutMs(file.size)
+					);
+					const response = result.response;
+					const reply = result.body;
+					if (!response.ok || reply.ok === false || reply.error)
+						throw new Error(reply.error || 'HTTP ' + response.status);
+					await refreshRoms();
+					await api('/api/load', { path: reply.path || name });
+					prepareForRomChange();
+					await refreshStates();
+					if (startStream()) {
+						ensureAudio();
+						setStatus('loaded ' + (reply.name || name) +
+							(reply.warning ? ' · ' + reply.warning : ''));
+					}
+				}
+				catch (error) {
+					setStatus('upload error: ' + error.message);
+				}
+				finally {
+					input.value = '';
+				}
+			});
+			if (!started)
+				input.value = '';
+		};
+
+		window.addEventListener('pagehide', event => {
+			clearTimeout(reconnectTimer);
+			if (fullscreenTransitionFinish)
+				fullscreenTransitionFinish(
+					false, new Error('the page was hidden during the transition')
+				);
+			stateRefreshGeneration++;
+			displayPreferenceGeneration++;
+			cancelAnimationFrame(gamepadFrame);
+			windowFocused = false;
+			releaseAllControls();
+			pageActive = false;
+			setFullscreenLayout(false);
+			cancelFullscreenFit();
+			suspendStream();
+			if (event && event.persisted) {
+				suspendExistingAudio();
+			}
+			else {
+				const closingAudio = audioContext;
+				audioContext = null;
+				audioGain = null;
+				audioSuspendPending = null;
+				audioResumePending = null;
+				nextAudioTime = 0;
+				if (closingAudio)
+					closingAudio.close().catch(() => {});
+			}
+		});
+		window.addEventListener('pageshow', event => {
+			if (!event.persisted)
+				return;
+			const wasInactive = !pageActive;
+			pageActive = true;
+			scheduleFullscreenFit();
+			networkOnline = navigator.onLine !== false;
+			windowFocused = typeof document.hasFocus !== 'function' ||
+				document.hasFocus();
+			resumeExistingAudio();
+			if (wasInactive)
+				gamepadFrame = requestAnimationFrame(updateGamepad);
+			if (wasInactive && authToken)
+				Promise.all([
+					refreshRoms(), refreshStates(), refreshDisplayPreferences()
+				]);
+			if (!document.hidden && streamRequested) {
+				if (networkOnline)
+					connect();
+				else
+					scheduleReconnect(
+						'browser reports offline · probing the router…', true
+					);
+			}
+		});
+
+		renderStateSlots(true);
+		if (authToken) {
+			Promise.all([
+				refreshRoms(), refreshStates(), refreshDisplayPreferences()
+			]);
+			setStatus('select and load a ROM to start the stream');
+		}
+		else {
+			setStatus('Access token missing. Open this page from authenticated LuCI.');
+			document.querySelectorAll(
+				'#btn-start, #btn-pause, #btn-reset, #btn-mute, ' +
+				'#btn-refresh, #btn-load, #upload, #rom-list, ' +
+				'#btn-state-save, #btn-state-load, #btn-state-delete, ' +
+				'#btn-state-refresh, #state-slot, #state-label, [data-control]'
+			).forEach(element => {
+				element.disabled = true;
+			});
+		}
+	</script>
+</body>
+</html>

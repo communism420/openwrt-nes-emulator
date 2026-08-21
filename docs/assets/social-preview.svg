@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
+  <title id="title">OpenWrt NES Emulator</title>
+  <desc id="description">A router-side NES emulator powered by FCEUmm and LuCI</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080b12"/>
+      <stop offset="0.55" stop-color="#101827"/>
+      <stop offset="1" stop-color="#07141c"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111a26"/>
+      <stop offset="1" stop-color="#071017"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#44b9e8" stroke-opacity=".055"/>
+    </pattern>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" rx="32" fill="url(#background)"/>
+  <rect width="1280" height="640" rx="32" fill="url(#grid)"/>
+  <circle cx="1115" cy="35" r="290" fill="#008bc7" opacity=".08"/>
+  <circle cx="115" cy="610" r="270" fill="#f59e0b" opacity=".055"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="72" y="112" fill="#56c8f0" font-size="22" font-weight="700" letter-spacing="5">OPENWRT</text>
+    <text x="68" y="202" fill="#f8fafc" font-size="68" font-weight="800" letter-spacing="-3">NES EMULATOR</text>
+    <text x="72" y="253" fill="#a9b7c9" font-size="24">A joke that became a real router-side console.</text>
+
+    <g font-size="18" font-weight="700">
+      <rect x="72" y="304" width="196" height="42" rx="21" fill="#13273a" stroke="#258cc0"/>
+      <text x="94" y="332" fill="#70d4ff">FCEUmm on router</text>
+      <rect x="282" y="304" width="140" height="42" rx="21" fill="#2c2111" stroke="#b97410"/>
+      <text x="308" y="332" fill="#fbbf55">LuCI UI</text>
+      <rect x="436" y="304" width="206" height="42" rx="21" fill="#14291f" stroke="#2b9b64"/>
+      <text x="460" y="332" fill="#68e0a4">35 APK ABIs</text>
+    </g>
+
+    <text x="72" y="414" fill="#dce6f2" font-size="22">CPU · PPU · RGB565 · JPEG</text>
+    <text x="72" y="453" fill="#dce6f2" font-size="22">audio · controls · save states</text>
+    <text x="72" y="492" fill="#dce6f2" font-size="22">all served by the router</text>
+    <text x="72" y="566" fill="#708399" font-size="17">OPENWRT 24.10 / 25.12  ·  VERSION 1.0.0-r19</text>
+  </g>
+
+  <g transform="translate(746 87)">
+    <path d="M50 122V48M394 122V48" stroke="#6c8197" stroke-width="12" stroke-linecap="round"/>
+    <path d="M338 70c20-24 46-36 76-36M357 93c15-15 33-22 54-22M379 114c8-7 17-10 28-10"
+          fill="none" stroke="#48bfea" stroke-width="8" stroke-linecap="round" opacity=".9"/>
+
+    <rect x="0" y="116" width="470" height="362" rx="34" fill="#131c28" stroke="#3e5369" stroke-width="5"/>
+    <rect x="30" y="148" width="410" height="244" rx="11" fill="url(#screen)" stroke="#47bce9" stroke-width="3"/>
+    <path d="M52 176H418V364H52Z" fill="none" stroke="#2c7da0" stroke-width="2" stroke-dasharray="11 8"/>
+
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
+      <text x="235" y="222" fill="#f8fafc" font-size="23" font-weight="800" letter-spacing="4">ROUTER CPU</text>
+      <text x="235" y="262" fill="#56c8f0" font-size="18" letter-spacing="2">FCEUMM + SOFTWARE RENDER</text>
+      <rect x="109" y="292" width="252" height="48" rx="6" fill="#101923" stroke="#e79b27" stroke-width="3"/>
+      <path d="M131 316H339" stroke="#e79b27" stroke-width="5" stroke-dasharray="12 8"/>
+      <text x="235" y="373" fill="#8fa4b9" font-size="15">BROWSER = THIN CLIENT</text>
+    </g>
+
+    <circle cx="58" cy="435" r="8" fill="#4ade80" filter="url(#glow)"/>
+    <circle cx="88" cy="435" r="8" fill="#4ade80" opacity=".7"/>
+    <circle cx="118" cy="435" r="8" fill="#f59e0b" opacity=".8"/>
+    <path d="M302 435h108" stroke="#526a80" stroke-width="10" stroke-linecap="round"/>
+  </g>
+</svg>

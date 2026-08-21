@@ -1,0 +1,37 @@
+OpenWrt NES Emulator 1.0.0-r19
+================================
+
+The output contains a separate APK v3 feed for each architecture:
+
+  <arch>/nes-emulator-1.0.0-r19.apk
+  <arch>/luci-app-nes-emulator-1.0.0-r19.apk
+  <arch>/packages.adb
+  <arch>/SHA256SUMS
+
+A full build without ARCHES covers all 35 package ABIs in the official
+OpenWrt 25.12 release: 35 directories and 70 APKs. To find
+the correct directory for a router, run:
+
+  apk --print-arch
+
+FCEUmm commit 76f68314ce42 is statically linked into /usr/bin/nesd.
+No separate fceumm_libretro.so is required.
+
+ABI coverage does not guarantee that a particular older router has enough
+flash storage, RAM, or performance for emulation and software video encoding.
+
+Unsigned local installation:
+
+  cd <arch>
+  sha256sum -c SHA256SUMS
+  apk --allow-untrusted add ./nes-emulator-1.0.0-r19.apk ./luci-app-nes-emulator-1.0.0-r19.apk
+
+Complete corresponding source:
+
+  sources/openwrt-nes-emulator-1.0.0-r19-source.tar.gz
+  sources/SHA256SUMS
+
+OUT is published as one atomic snapshot. Previous APKs, indexes, and keys in
+that directory are removed; move any historical artifacts elsewhere first.
+A non-empty custom OUT is replaced only when it has the ownership marker made
+by this script. System root directories are forbidden as OUT.

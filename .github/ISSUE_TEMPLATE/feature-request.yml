@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a focused improvement that fits a router-side emulator
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What is difficult today, and who benefits from changing it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the user-visible result rather than only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Router constraints
+      description: Consider CPU, RAM, flash, bandwidth, latency, security, and compatibility.
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Project boundary
+      options:
+        - label: The proposal keeps NES emulation and game-frame generation on the router.
+          required: true
+        - label: The proposal does not require distributing commercial ROMs or proprietary BIOS files.
+          required: true

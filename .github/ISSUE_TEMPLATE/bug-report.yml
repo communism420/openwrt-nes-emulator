@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible emulator, LuCI, packaging, or streaming problem
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach ROMs, BIOS files, save data, auth tokens, router backups, or private keys. Report security issues through the private process in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Both package revisions must match.
+      placeholder: 1.0.0-r19
+    validations:
+      required: true
+  - type: input
+    id: openwrt
+    attributes:
+      label: OpenWrt version and package architecture
+      placeholder: OpenWrt 25.12.5, aarch64_cortex-a53
+    validations:
+      required: true
+  - type: input
+    id: router
+    attributes:
+      label: Router model
+      placeholder: Manufacturer and exact model
+    validations:
+      required: true
+  - type: dropdown
+    id: stream
+    attributes:
+      label: Stream format
+      options:
+        - Raw RGB565
+        - JPEG
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the expected result and the actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open LuCI → Services → NES Emulator
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      description: Paste only relevant logread output after removing tokens, query strings, private addresses, ROM names, and other sensitive data.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checklist
+      options:
+        - label: I tested with matching native and LuCI package revisions.
+          required: true
+        - label: I removed credentials, copyrighted files, and private data.
+          required: true
+        - label: This is not a confidential security report.
+          required: true

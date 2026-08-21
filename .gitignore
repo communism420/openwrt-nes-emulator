@@ -1,0 +1,43 @@
+*.o
+*.so
+*.ipk
+nesd
+package/nes-emulator/src/nesd
+*.swp
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Never commit user ROMs, emulator state, or local credentials.
+*.nes
+*.fds
+*.unf
+*.unif
+*.srm
+*.sav
+*.nss
+*.state
+.env
+.env.*
+!.env.example
+auth.token
+*-private.pem
+*.private.pem
+id_rsa
+id_ed25519
+
+# Local/reproducible build state
+/build/
+/package/nes-emulator/src/.build/
+
+# Generated APK v3 feeds and source bundles. Keep dist/apk/INSTALL.txt tracked.
+/dist/apk/*/*.apk
+/dist/apk/*/packages.adb
+/dist/apk/*/SHA256SUMS
+/dist/apk/sources/*.tar.gz
+/dist/apk/sources/SHA256SUMS
+/dist/apk/keys/
+/dist/apk/.openwrt-nes-emulator-output
+/dist/.apk.stage.*
+/dist/.apk.backup.*
+/dist/github/
