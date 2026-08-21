@@ -5,9 +5,9 @@ upgraded as a matching `nes-emulator` and `luci-app-nes-emulator` pair.
 
 ## Unreleased
 
-- Added a fail-closed OpenWrt installer that detects the router's APK ABI,
-  selects the latest matching GitHub release, verifies both package checksums,
-  and installs the native daemon and LuCI application in one transaction.
+- Added a fail-closed OpenWrt installer that detects the router's exact package
+  ABI, selects the latest matching GitHub release, verifies both package
+  checksums, and installs the native daemon and LuCI application together.
 
 ## 1.0.0-r19 — initial public release
 

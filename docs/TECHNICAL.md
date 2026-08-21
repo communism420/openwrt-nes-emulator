@@ -215,8 +215,8 @@ dist/apk/
 └── <34 more architectures>/...
 ```
 
-The output contains 70 APKs: two packages for each of the 35 ABIs.
-Supported `apk --print-arch` values:
+The output contains 70 APKs: two packages for each of the 35 OpenWrt package
+ABIs. Supported `DISTRIB_ARCH` values:
 
 ```text
 aarch64_cortex-a53            aarch64_cortex-a72
@@ -244,14 +244,17 @@ This is complete coverage of the CPU package ABIs in the current OpenWrt
 not guarantee that a particular older router has enough flash storage, RAM,
 or performance for emulation and software video encoding.
 
-To determine the router architecture:
+To determine the exact package ABI on an OpenWrt 25.12 router:
 
 ```sh
-apk --print-arch
-# or, on an older system:
-. /etc/os-release
-printf '%s\n' "$OPENWRT_ARCH"
+. /etc/openwrt_release
+printf '%s\n' "$DISTRIB_ARCH"
 ```
+
+Do not use `apk --print-arch` for release-asset selection. On OpenWrt it may
+print apk-tools' generic compile-time architecture (for example `aarch64`)
+while the installable package profile is more specific (for example
+`aarch64_cortex-a53`).
 
 ### Unsigned local installation
 
@@ -267,7 +270,9 @@ scp nes-emulator-1.0.0-r19.apk \
 On the router:
 
 ```sh
-apk --allow-untrusted add \
+apk --update-cache --wait 120 add luci-base rpcd
+apk --repositories-file /dev/null --no-network --no-cache \
+  --allow-untrusted --wait 120 add \
   /tmp/nes-emulator-1.0.0-r19.apk \
   /tmp/luci-app-nes-emulator-1.0.0-r19.apk
 ```
