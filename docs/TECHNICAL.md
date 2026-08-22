@@ -271,11 +271,15 @@ On the router:
 
 ```sh
 apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
-apk --repositories-file /dev/null --no-network --no-cache \
+apk --repositories-file /dev/null --no-network \
   --allow-untrusted --wait 120 add \
   /tmp/nes-emulator-1.0.0-r19.apk \
   /tmp/luci-app-nes-emulator-1.0.0-r19.apk
 ```
+
+Do not add `--no-cache` to the local transaction. apk-tools v3 refuses a
+non-repository package when package caching is explicitly disabled; configured
+repositories and network access are already disabled by the other two options.
 
 The LuCI package requires exactly the same revision of the native package, so
 `r18` and `r19` intentionally cannot be mixed. When upgrading, always pass both

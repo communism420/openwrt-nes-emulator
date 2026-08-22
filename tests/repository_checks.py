@@ -224,7 +224,7 @@ def check_installer() -> None:
         "MAX_MANIFEST_BYTES=1048576",
         "MAX_APK_BYTES=8388608",
         "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io",
-        "apk --repositories-file /dev/null --no-network --no-cache",
+        "apk --repositories-file /dev/null --no-network",
         '--allow-untrusted --wait 120 add \\\n\t"$native_path" "$luci_path"',
     ):
         require(marker in installer, f"installer is missing required contract: {marker}")
@@ -239,6 +239,7 @@ def check_installer() -> None:
         "--force-downgrade",
         "--update-cache --allow-untrusted",
         "apk --print-arch",
+        "--no-cache",
     ):
         require(forbidden not in installer, f"installer contains unsafe behavior: {forbidden}")
 
@@ -256,7 +257,8 @@ def check_installer() -> None:
         in readme
         and "mktemp /tmp/openwrt-nes-installer.XXXXXX" in readme
         and "uclient-fetch -q -T 30 -O" in readme
-        and "apk --repositories-file /dev/null --no-network --no-cache" in readme
+        and "apk --repositories-file /dev/null --no-network" in readme
+        and "--no-cache" not in readme
         and "| sh" not in readme,
         "README automatic installation command is missing or masks download failures",
     )
@@ -2286,13 +2288,13 @@ def check_static_build() -> None:
         in build_script
         and "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io"
         in build_script
-        and "apk --repositories-file /dev/null --no-network --no-cache \\"
+        and "apk --repositories-file /dev/null --no-network \\"
         in build_script
         and "--allow-untrusted --wait 120 add \\" in build_script
         and "./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk"
         in build_script
         and re.search(
-            r"apk --repositories-file /dev/null --no-network --no-cache\s+\\\n"
+            r"apk --repositories-file /dev/null --no-network\s+\\\n"
             r"\s*--allow-untrusted --wait 120 add\s+\\\n"
             rf"\s*(?:\./|/tmp/)nes-emulator-{re.escape(VERSION)}-r"
             rf"{re.escape(PACKAGE_RELEASE)}\.apk\s+\\\n"

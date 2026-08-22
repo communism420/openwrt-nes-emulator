@@ -86,7 +86,7 @@ case "$*" in
 	--update-cache\ --wait\ 120\ add\ luci-base\ rpcd\ jshn\ jsonfilter\ cgi-io)
 		[ "${INSTALL_TEST_DEPENDENCY_FAIL:-0}" = '0' ]
 		;;
-	--repositories-file\ /dev/null\ --no-network\ --no-cache\ --allow-untrusted\ --wait\ 120\ add\ *)
+	--repositories-file\ /dev/null\ --no-network\ --allow-untrusted\ --wait\ 120\ add\ *)
 		[ "${INSTALL_TEST_ADD_FAIL:-0}" = '0' ]
 		;;
 	*)
@@ -186,11 +186,13 @@ grep -Fxq 'https://fixtures.invalid/releases/download/v1.2.3-r4/luci-app-nes-emu
 	fail 'APK containers were not verified together exactly once'
 [ "$(grep -c '^--update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io$' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'trusted LuCI dependencies were not installed exactly once'
-[ "$(grep -c '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
+[ "$(grep -c '^--repositories-file /dev/null --no-network --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'packages were not installed in one transaction'
+! grep -q -- '--no-cache' "$LOG_ROOT/apk.log" ||
+	fail 'local package transaction disabled the cache required by apk-tools v3'
 ! grep -Eq -- '--update-cache .*--allow-untrusted|--allow-untrusted .*--update-cache' \
 	"$LOG_ROOT/apk.log" || fail 'allow-untrusted leaked into a repository transaction'
-local_add_line="$(grep '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' \
+local_add_line="$(grep '^--repositories-file /dev/null --no-network --allow-untrusted --wait 120 add ' \
 	"$LOG_ROOT/apk.log")"
 printf '%s\n' "$local_add_line" | grep -Fq 'nes-emulator-1.2.3-r4-x86_64.apk' ||
 	fail 'native package was absent from the APK transaction'
@@ -246,7 +248,7 @@ grep -Fxq 'https://fixtures.invalid/releases/download/v1.2.3-r4/luci-app-nes-emu
 ! grep -Eq '/(nes-emulator|luci-app-nes-emulator)-1\.2\.3-r4-aarch64\.apk$' \
 	"$LOG_ROOT/fetch.log" ||
 	fail 'generic apk-tools architecture was selected instead of the package profile'
-[ "$(grep -c '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
+[ "$(grep -c '^--repositories-file /dev/null --no-network --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'aarch64 package pair was not installed in one transaction'
 ! grep -Fxq -- '--print-arch' "$LOG_ROOT/apk.log" ||
 	fail 'aarch64 profile selection regressed to apk --print-arch'
@@ -569,7 +571,7 @@ if run_installer > "$TEST_ROOT/verify-fail.out" 2> "$TEST_ROOT/verify-fail.err";
 fi
 grep -Fq 'APK container verification failed' "$TEST_ROOT/verify-fail.err" ||
 	fail 'APK container failure was not explained'
-! grep -q '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' \
+! grep -q '^--repositories-file /dev/null --no-network --allow-untrusted --wait 120 add ' \
 	"$LOG_ROOT/apk.log" ||
 	fail 'invalid APK container reached package installation'
 assert_no_install_workdir
@@ -585,7 +587,7 @@ if run_installer > "$TEST_ROOT/dependency-fail.out" 2> "$TEST_ROOT/dependency-fa
 fi
 [ "$(grep -c '^--update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io$' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'failed dependency transaction was retried or skipped'
-! grep -q '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' \
+! grep -q '^--repositories-file /dev/null --no-network --allow-untrusted --wait 120 add ' \
 	"$LOG_ROOT/apk.log" || fail 'local packages were installed after dependency failure'
 assert_no_install_workdir
 
@@ -597,7 +599,7 @@ export CASE_DEPENDENCY_FAIL CASE_ADD_FAIL
 if run_installer > "$TEST_ROOT/add-fail.out" 2> "$TEST_ROOT/add-fail.err"; then
 	fail 'apk transaction failure was ignored'
 fi
-[ "$(grep -c '^--repositories-file /dev/null --no-network --no-cache --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
+[ "$(grep -c '^--repositories-file /dev/null --no-network --allow-untrusted --wait 120 add ' "$LOG_ROOT/apk.log")" -eq 1 ] ||
 	fail 'failed APK transaction was retried or skipped'
 assert_no_install_workdir
 

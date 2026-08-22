@@ -107,11 +107,14 @@ installation:
    test "$(wc -l < "SHA256SUMS.${ABI}")" -eq 2
    sha256sum -c "SHA256SUMS.${ABI}"
    apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
-   apk --repositories-file /dev/null --no-network --no-cache \
+   apk --repositories-file /dev/null --no-network \
     --allow-untrusted --wait 120 add \
     "./nes-emulator-1.0.0-r19-${ABI}.apk" \
     "./luci-app-nes-emulator-1.0.0-r19-${ABI}.apk"
    ```
+
+   Leave APK package caching enabled for this local transaction. apk-tools v3
+   rejects non-repository local APK files when caching is explicitly disabled.
 
 4. Open **LuCI → Services → NES Emulator**, upload a ROM you are legally
    entitled to use, and open the Play tab.

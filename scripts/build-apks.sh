@@ -2501,7 +2501,7 @@ Unsigned local installation:
   cd <arch>
   sha256sum -c SHA256SUMS
   apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
-  apk --repositories-file /dev/null --no-network --no-cache \
+  apk --repositories-file /dev/null --no-network \
     --allow-untrusted --wait 120 add \
     ./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk
 EOF
