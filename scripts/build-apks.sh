@@ -2501,7 +2501,10 @@ Unsigned local installation:
   cd <arch>
   sha256sum -c SHA256SUMS
   apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
+  mkdir -p /etc/apk/cache/openwrt-nes-emulator
+  chmod 0755 /etc/apk/cache/openwrt-nes-emulator
   apk --repositories-file /dev/null --no-network \
+    --cache-dir /etc/apk/cache/openwrt-nes-emulator --cache-packages \
     --allow-untrusted --wait 120 add \
     ./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk
 EOF

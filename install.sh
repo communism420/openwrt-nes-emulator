@@ -15,6 +15,7 @@ OPENWRT_RELEASE_FILE="${OPENWRT_NES_RELEASE_FILE:-/etc/openwrt_release}"
 APK_ARCH_FILE="${OPENWRT_NES_APK_ARCH_FILE:-/etc/apk/arch}"
 MODEL_FILE="${OPENWRT_NES_MODEL_FILE:-/tmp/sysinfo/model}"
 TEMP_ROOT="${OPENWRT_NES_TMPDIR:-${TMPDIR:-/tmp}}"
+APK_CACHE_DIR="${OPENWRT_NES_APK_CACHE_DIR:-/etc/apk/cache/openwrt-nes-emulator}"
 MIN_TEMP_KB=4096
 MAX_MANIFEST_BYTES=1048576
 MAX_APK_BYTES=8388608
@@ -57,6 +58,15 @@ case "$RELEASES_BASE" in
 	https://*) ;;
 	*) die 'the tag-scoped release download base must use HTTPS' ;;
 esac
+case "$APK_CACHE_DIR" in
+	/*) ;;
+	*) die 'the APK cache directory must be an absolute path' ;;
+esac
+case "$APK_CACHE_DIR" in
+	*'
+'*) die 'the APK cache directory contains a newline' ;;
+esac
+[ "$APK_CACHE_DIR" != '/' ] || die 'the APK cache directory cannot be /'
 
 user_id="$(id -u 2>/dev/null)" || die 'cannot determine the current user'
 [ "$user_id" = '0' ] || die 'run this installer as root on the router'
@@ -313,9 +323,14 @@ say 'checksums and APK containers verified'
 say 'installing trusted LuCI runtime dependencies'
 apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
 say 'installing the verified emulator and LuCI packages in one transaction'
-# Keep package caching enabled: apk-tools v3 rejects non-repository local APKs
-# when caching is explicitly disabled.
+# apk-tools v3 requires non-repository packages to be retained in a cache.
+[ ! -L "$APK_CACHE_DIR" ] || die "APK cache directory is a symlink: $APK_CACHE_DIR"
+mkdir -p "$APK_CACHE_DIR" || die "cannot create APK cache directory: $APK_CACHE_DIR"
+[ -d "$APK_CACHE_DIR" ] && [ ! -L "$APK_CACHE_DIR" ] ||
+	die "APK cache path is not a safe directory: $APK_CACHE_DIR"
+chmod 0755 "$APK_CACHE_DIR" || die "cannot secure APK cache directory: $APK_CACHE_DIR"
 apk --repositories-file /dev/null --no-network \
+	--cache-dir "$APK_CACHE_DIR" --cache-packages \
 	--allow-untrusted --wait 120 add \
 	"$native_path" "$luci_path"
 

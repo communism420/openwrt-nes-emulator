@@ -223,8 +223,12 @@ def check_installer() -> None:
         'apk --allow-untrusted verify "$native_path" "$luci_path"',
         "MAX_MANIFEST_BYTES=1048576",
         "MAX_APK_BYTES=8388608",
+        'APK_CACHE_DIR="${OPENWRT_NES_APK_CACHE_DIR:-/etc/apk/cache/openwrt-nes-emulator}"',
+        'mkdir -p "$APK_CACHE_DIR"',
+        'chmod 0755 "$APK_CACHE_DIR"',
         "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io",
         "apk --repositories-file /dev/null --no-network",
+        '--cache-dir "$APK_CACHE_DIR" --cache-packages',
         '--allow-untrusted --wait 120 add \\\n\t"$native_path" "$luci_path"',
     ):
         require(marker in installer, f"installer is missing required contract: {marker}")
@@ -258,6 +262,8 @@ def check_installer() -> None:
         and "mktemp /tmp/openwrt-nes-installer.XXXXXX" in readme
         and "uclient-fetch -q -T 30 -O" in readme
         and "apk --repositories-file /dev/null --no-network" in readme
+        and "--cache-dir /etc/apk/cache/openwrt-nes-emulator --cache-packages"
+        in readme
         and "--no-cache" not in readme
         and "| sh" not in readme,
         "README automatic installation command is missing or masks download failures",
@@ -2290,11 +2296,15 @@ def check_static_build() -> None:
         in build_script
         and "apk --repositories-file /dev/null --no-network \\"
         in build_script
+        and "--cache-dir /etc/apk/cache/openwrt-nes-emulator --cache-packages \\"
+        in build_script
         and "--allow-untrusted --wait 120 add \\" in build_script
         and "./nes-emulator-$APK_VERSION.apk ./luci-app-nes-emulator-$APK_VERSION.apk"
         in build_script
         and re.search(
             r"apk --repositories-file /dev/null --no-network\s+\\\n"
+            r"\s*--cache-dir /etc/apk/cache/openwrt-nes-emulator "
+            r"--cache-packages\s+\\\n"
             r"\s*--allow-untrusted --wait 120 add\s+\\\n"
             rf"\s*(?:\./|/tmp/)nes-emulator-{re.escape(VERSION)}-r"
             rf"{re.escape(PACKAGE_RELEASE)}\.apk\s+\\\n"

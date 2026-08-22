@@ -107,14 +107,17 @@ installation:
    test "$(wc -l < "SHA256SUMS.${ABI}")" -eq 2
    sha256sum -c "SHA256SUMS.${ABI}"
    apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
+   mkdir -p /etc/apk/cache/openwrt-nes-emulator
+   chmod 0755 /etc/apk/cache/openwrt-nes-emulator
    apk --repositories-file /dev/null --no-network \
+    --cache-dir /etc/apk/cache/openwrt-nes-emulator --cache-packages \
     --allow-untrusted --wait 120 add \
     "./nes-emulator-1.0.0-r19-${ABI}.apk" \
     "./luci-app-nes-emulator-1.0.0-r19-${ABI}.apk"
    ```
 
-   Leave APK package caching enabled for this local transaction. apk-tools v3
-   rejects non-repository local APK files when caching is explicitly disabled.
+   The dedicated persistent cache is intentional: apk-tools v3 rejects a
+   non-repository local APK unless it is retained for later recovery.
 
 4. Open **LuCI → Services → NES Emulator**, upload a ROM you are legally
    entitled to use, and open the Play tab.

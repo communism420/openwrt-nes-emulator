@@ -271,15 +271,19 @@ On the router:
 
 ```sh
 apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io
+mkdir -p /etc/apk/cache/openwrt-nes-emulator
+chmod 0755 /etc/apk/cache/openwrt-nes-emulator
 apk --repositories-file /dev/null --no-network \
+  --cache-dir /etc/apk/cache/openwrt-nes-emulator --cache-packages \
   --allow-untrusted --wait 120 add \
   /tmp/nes-emulator-1.0.0-r19.apk \
   /tmp/luci-app-nes-emulator-1.0.0-r19.apk
 ```
 
-Do not add `--no-cache` to the local transaction. apk-tools v3 refuses a
-non-repository package when package caching is explicitly disabled; configured
-repositories and network access are already disabled by the other two options.
+The dedicated persistent cache is required because apk-tools v3 refuses a
+non-repository package unless it can retain the APK for later recovery.
+Configured repositories and network access are still disabled for this
+untrusted local transaction.
 
 The LuCI package requires exactly the same revision of the native package, so
 `r18` and `r19` intentionally cannot be mixed. When upgrading, always pass both
