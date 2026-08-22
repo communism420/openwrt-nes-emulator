@@ -163,11 +163,88 @@ def check_clean_export(output: Path) -> None:
     )
     require("include ../../luci.mk" in luci_makefile, "LuCI export does not use luci.mk")
     require(
+        "PKG_VERSION:=" not in luci_makefile
+        and "PKG_RELEASE:=" not in luci_makefile
+        and "PKG_LICENSE_FILES:=" not in luci_makefile
+        and not (luci / "files/LICENSE-MIT").exists(),
+        "LuCI export retains ignored version/release or dead license metadata",
+    )
+    require(
         "# call BuildPackage - OpenWrt buildroot signature" in luci_makefile,
         "LuCI export lacks the package metadata scanner signature",
     )
     require("EXTRA_DEPENDS" not in luci_makefile, "standalone version lock leaked upstream")
     require("luci-app-nes-emulator" not in native_makefile, "native/LuCI cycle was introduced")
+    require(
+        "PKG_VERSION:=1.0.0" in native_makefile
+        and "PKG_RELEASE:=1" in native_makefile
+        and "PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION).tar.gz"
+        in native_makefile
+        and "codeload.github.com/communism420/openwrt-nes-emulator/"
+        "tar.gz/v$(PKG_VERSION)?" in native_makefile
+        and "PKG_HASH:=a47435bd02c5610144a105d39c8e2d0f4a9940ee9eff02452353accec038feba"
+        in native_makefile,
+        "native export does not use the canonical SemVer project codeload",
+    )
+    require(
+        "PKG_FCEUMM_VERSION:=76f68314ce4213703174108f461c431001dcc204"
+        in native_makefile
+        and "define Download/fceumm" in native_makefile
+        and "libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz" in native_makefile
+        and "codeload.github.com/libretro/libretro-fceumm/tar.gz/"
+        "$(PKG_FCEUMM_VERSION)?" in native_makefile
+        and "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031"
+        in native_makefile
+        and 'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"' in native_makefile,
+        "native export does not use one hash-pinned FCEUmm provenance value",
+    )
+    native_init = native / "files/nes-emulator.init"
+    native_config = native / "files/nes-emulator.config"
+    require(
+        native_init.read_bytes()
+        == (ROOT / "package/nes-emulator/files/nes-emulator.init").read_bytes()
+        and native_config.read_bytes()
+        == (ROOT / "package/nes-emulator/files/nes-emulator.config").read_bytes(),
+        "native export does not expose the exact reviewed init/UCI payload",
+    )
+    patch_statuses = {
+        "001-propagate-savestate-parse-errors.patch": (
+            "Upstream-Status: Submitted "
+            "[https://github.com/libretro/libretro-fceumm/pull/653]"
+        ),
+        "002-load-supplied-rom-buffer.patch": (
+            "Upstream-Status: Inappropriate [nesd frontend specific]"
+        ),
+    }
+    for patch_name in (
+        "001-propagate-savestate-parse-errors.patch",
+        "002-load-supplied-rom-buffer.patch",
+    ):
+        exported_patch = native / "patches-fceumm" / patch_name
+        source_patch = ROOT / "package/nes-emulator/patches" / patch_name
+        require(
+            exported_patch.read_bytes() == source_patch.read_bytes()
+            and re.match(
+                r"^From [0-9a-f]{40} Mon Sep 17 00:00:00 2001\n"
+                r"From: Yaroslav Vereshchagin "
+                r"<yarik\.vereshchagin1996@gmail\.com>\n",
+                exported_patch.read_text(encoding="utf-8"),
+            )
+            is not None
+            and re.search(
+                r"^Date: .+\nSubject: \[PATCH [12]/2\] ",
+                exported_patch.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+            is not None
+            and patch_statuses[patch_name]
+            in exported_patch.read_text(encoding="utf-8")
+            and "Signed-off-by: Yaroslav Vereshchagin "
+            "<yarik.vereshchagin1996@gmail.com>" in exported_patch.read_text(
+                encoding="utf-8"
+            ),
+            f"native export lacks the exact reviewable FCEUmm patch {patch_name}",
+        )
     translation_template = (
         luci / "po/templates/nes-emulator.pot"
     ).read_text(encoding="utf-8")
@@ -183,13 +260,52 @@ def check_clean_export(output: Path) -> None:
     require(
         "define Package/nes-emulator/postinst" in native_makefile
         and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native_makefile
-        and '[ -n "$${PKG_INSTROOT:-}" ] && exit 0' in native_makefile
-        and "/etc/init.d/nes-emulator preflight" in native_makefile,
-        "native post-install does not initialize secure runtime metadata",
+        and "$${PKG_INSTROOT" not in native_makefile
+        and "/etc/init.d/nes-emulator preflight" in native_makefile
+        and "\nexit 0\nendef" in native_makefile,
+        "native post-install is not image-root safe and best-effort",
     )
+    for forbidden_variable in (
+        "PROJECT_SOURCE_RELEASE",
+        "PROJECT_SOURCE_DATE_EPOCH",
+        "PROJECT_URL",
+        "FCEUMM_SHORT_COMMIT",
+        "NESD_SOURCE_DIR",
+        "NESD_FILES_DIR",
+        "SOURCE_DATE_EPOCH",
+        "> $(PKG_BUILD_DIR)/version.date",
+        "-r19-source.tar.gz",
+        "/releases/download/",
+        'FCEUMM_GIT_VERSION="76f68314ce42"',
+        "$(INSTALL_DIR) $(1)/etc/nes-emulator",
+        "chmod 0750",
+    ):
+        require(
+            forbidden_variable not in native_makefile,
+            f"native export retains redundant variable {forbidden_variable}",
+        )
     require(
         "PKG_ASLR_PIE_REGULAR:=1" in native_makefile,
         "native upstream daemon does not opt into OpenWrt PIE hardening",
+    )
+    require(
+        "define Build/Prepare" in native_makefile
+        and "$(call Build/Prepare/Default)" in native_makefile
+        and "FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm"
+        in native_makefile
+        and "$(call PatchDir,$(FCEUMM_BUILD_DIR)," in native_makefile
+        and "$(CURDIR)/patches-fceumm,)" in native_makefile,
+        "native export does not conventionally unpack and patch its secondary core",
+    )
+    require(
+        "$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)"
+        in native_makefile
+        and "define Quilt/Refresh/Package" in native_makefile
+        and "$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR),"
+        in native_makefile
+        and "Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)"
+        in native_makefile,
+        "native export cannot refresh its separately unpacked FCEUmm patch stack",
     )
 
     modes = (output / "FILE_MODES").read_text(encoding="ascii")
@@ -197,6 +313,20 @@ def check_clean_export(output: Path) -> None:
         "100644  openwrt-packages/multimedia/nes-emulator/Makefile"
         in modes,
         "native recipe mode is not preserved",
+    )
+    require(
+        "100755  openwrt-packages/multimedia/nes-emulator/"
+        "files/nes-emulator.init" in modes
+        and "100644  openwrt-packages/multimedia/nes-emulator/"
+        "files/nes-emulator.config" in modes,
+        "native runtime file modes are not preserved",
+    )
+    require(
+        "100644  openwrt-packages/multimedia/nes-emulator/patches-fceumm/"
+        "001-propagate-savestate-parse-errors.patch" in modes
+        and "100644  openwrt-packages/multimedia/nes-emulator/patches-fceumm/"
+        "002-load-supplied-rom-buffer.patch" in modes,
+        "native FCEUmm patch modes are not preserved",
     )
     require(
         "100755  openwrt-luci/applications/luci-app-nes-emulator/"

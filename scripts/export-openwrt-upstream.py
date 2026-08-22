@@ -22,6 +22,12 @@ MAINTAINER_PLACEHOLDER = "@OPENWRT_MAINTAINER@"
 NATIVE_TEMPLATE = (
     ROOT / "upstream" / "openwrt-packages" / "multimedia" / "nes-emulator"
 )
+NATIVE_RUNTIME_FILES = ROOT / "package" / "nes-emulator" / "files"
+NATIVE_FCEUMM_PATCHES = ROOT / "package" / "nes-emulator" / "patches"
+NATIVE_FCEUMM_PATCH_NAMES = (
+    "001-propagate-savestate-parse-errors.patch",
+    "002-load-supplied-rom-buffer.patch",
+)
 LUCI_SOURCE = ROOT / "package" / "luci-app-nes-emulator"
 LUCI_MAKEFILE_TEMPLATE = LUCI_SOURCE / "Makefile.upstream"
 DEFAULT_OUTPUT = ROOT / "build" / "openwrt-upstream"
@@ -32,6 +38,7 @@ MODES_FILE = "FILE_MODES"
 NATIVE_RELATIVE = Path("openwrt-packages/multimedia/nes-emulator")
 LUCI_RELATIVE = Path("openwrt-luci/applications/luci-app-nes-emulator")
 EXECUTABLE_PATHS = {
+    NATIVE_RELATIVE / "files/nes-emulator.init",
     LUCI_RELATIVE / "root/usr/libexec/rpcd/nes-emulator",
 }
 ROM_SUFFIXES = {".nes", ".fds", ".unf", ".unif", ".srm", ".sav", ".nss"}
@@ -208,23 +215,46 @@ def validate_native_tree(
         "PKG_RELEASE:=1",
         "PKG_LICENSE:=",
         "PKG_HASH:=",
+        "PKG_FCEUMM_VERSION:=76f68314ce4213703174108f461c431001dcc204",
         "PKG_ASLR_PIE_REGULAR:=1",
         "include $(INCLUDE_DIR)/package.mk",
-        "NESD_SOURCE_DIR:=",
-        "NESD_FILES_DIR:=",
-        "FCEUMM_DIR:=",
+        "define Download/fceumm",
+        "FILE:=libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz",
+        "URL:=https://codeload.github.com/libretro/libretro-fceumm/tar.gz/$(PKG_FCEUMM_VERSION)?",
+        "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031",
+        "$(eval $(call Download,fceumm))",
+        "FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm",
+        "define Build/Prepare",
+        "$(call Build/Prepare/Default)",
+        "$(call PatchDir,$(FCEUMM_BUILD_DIR),",
+        "$(CURDIR)/patches-fceumm,)",
+        "$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)",
+        "define Quilt/Refresh/Package",
+        "$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR),",
+        "Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)",
         "define Build/Compile",
+        'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"',
         "define Package/nes-emulator/install",
         "define Package/nes-emulator/postinst",
         '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0',
-        '[ -n "$${PKG_INSTROOT:-}" ] && exit 0',
         "/etc/init.d/nes-emulator preflight",
+        "exit 0",
+        "$(INSTALL_BIN) $(CURDIR)/files/nes-emulator.init",
+        "$(INSTALL_CONF) $(CURDIR)/files/nes-emulator.config",
         "$(eval $(call BuildPackage,nes-emulator))",
     ):
         require(marker in makefile, f"native upstream Makefile is missing: {marker}")
     require(
         re.search(r"^PKG_HASH:=[0-9a-f]{64}$", makefile, re.MULTILINE) is not None,
         "native project source hash is missing or not SHA-256",
+    )
+    require(
+        "PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION).tar.gz" in makefile
+        and "PKG_SOURCE_URL:=https://codeload.github.com/communism420/"
+        "openwrt-nes-emulator/tar.gz/v$(PKG_VERSION)?" in makefile
+        and "PKG_HASH:=a47435bd02c5610144a105d39c8e2d0f4a9940ee9eff02452353accec038feba"
+        in makefile,
+        "native project source is not the canonical hash-pinned v1.0.0 codeload",
     )
     require(
         "/latest/" not in makefile
@@ -237,6 +267,77 @@ def validate_native_tree(
         "luci-app-nes-emulator" not in makefile and "LUCI_" not in makefile,
         "native package must not depend on the LuCI feed",
     )
+    for forbidden in (
+        "PROJECT_SOURCE_RELEASE",
+        "PROJECT_SOURCE_DATE_EPOCH",
+        "PROJECT_URL",
+        "FCEUMM_SHORT_COMMIT",
+        "NESD_SOURCE_DIR",
+        "NESD_FILES_DIR",
+        "FCEUMM_DIR:=",
+        "$${PKG_INSTROOT",
+        "SOURCE_DATE_EPOCH",
+        "> $(PKG_BUILD_DIR)/version.date",
+        "-r19-source.tar.gz",
+        "/releases/download/",
+        'FCEUMM_GIT_VERSION="76f68314ce42"',
+        "$(INSTALL_DIR) $(1)/etc/nes-emulator",
+        "chmod 0750",
+    ):
+        require(
+            forbidden not in makefile,
+            f"native upstream recipe duplicates a standard variable or guard: {forbidden}",
+        )
+    init_script = root / "files/nes-emulator.init"
+    default_config = root / "files/nes-emulator.config"
+    require(init_script in files, "native upstream tree omits its reviewed init script")
+    require(default_config in files, "native upstream tree omits its reviewed UCI defaults")
+    require(
+        read_text(init_script).startswith("#!/bin/sh /etc/rc.common\n")
+        and 'EXTRA_COMMANDS="preflight"' in read_text(init_script),
+        "native upstream init script lacks its rc.common preflight entry point",
+    )
+    require(
+        read_text(default_config).startswith("config nes-emulator 'main'\n"),
+        "native upstream UCI defaults are malformed",
+    )
+    patch_directory = root / "patches-fceumm"
+    require(
+        patch_directory.is_dir()
+        and {path.name for path in patch_directory.iterdir()}
+        == set(NATIVE_FCEUMM_PATCH_NAMES),
+        "native upstream tree does not contain exactly the two reviewed FCEUmm patches",
+    )
+    patch_statuses = {
+        "001-propagate-savestate-parse-errors.patch": (
+            "Upstream-Status: Submitted "
+            "[https://github.com/libretro/libretro-fceumm/pull/653]"
+        ),
+        "002-load-supplied-rom-buffer.patch": (
+            "Upstream-Status: Inappropriate [nesd frontend specific]"
+        ),
+    }
+    for patch_name in NATIVE_FCEUMM_PATCH_NAMES:
+        patch_path = patch_directory / patch_name
+        require(patch_path in files, f"native upstream tree omits {patch_name}")
+        patch = read_text(patch_path)
+        require(
+            re.match(
+                r"^From [0-9a-f]{40} Mon Sep 17 00:00:00 2001\n"
+                r"From: Yaroslav Vereshchagin "
+                r"<yarik\.vereshchagin1996@gmail\.com>\n",
+                patch,
+            )
+            is not None
+            and re.search(r"^Date: .+\nSubject: \[PATCH [12]/2\] ", patch, re.MULTILINE)
+            is not None
+            and patch_statuses[patch_name] in patch
+            and "Signed-off-by: Yaroslav Vereshchagin "
+            "<yarik.vereshchagin1996@gmail.com>\n---\n" in patch
+            and "--- a/" in patch
+            and "+++ b/" in patch,
+            f"native FCEUmm patch lacks reviewable authorship metadata: {patch_name}",
+        )
     if template:
         validate_template_identity(makefile, "PKG_MAINTAINER", "native")
     else:
@@ -263,7 +364,6 @@ def validate_luci_tree(
 
     for marker in (
         "include $(TOPDIR)/rules.mk",
-        "PKG_RELEASE:=1",
         "PKG_LICENSE:=MIT",
         "include ../../luci.mk",
         "# call BuildPackage - OpenWrt buildroot signature",
@@ -290,6 +390,9 @@ def validate_luci_tree(
         "EXTRA_DEPENDS",
         "nes-emulator (=",
         "nes-emulator=",
+        "PKG_VERSION:=",
+        "PKG_RELEASE:=",
+        "PKG_LICENSE_FILES:=",
     ):
         require(forbidden not in makefile, f"LuCI upstream recipe is not canonical: {forbidden}")
     if template:
@@ -342,7 +445,9 @@ def validate_luci_tree(
 
 
 def validate_templates() -> None:
-    validate_native_tree(NATIVE_TEMPLATE, None, template=True)
+    native_makefile = NATIVE_TEMPLATE / "Makefile"
+    require(native_makefile.is_file(), "missing native upstream Makefile template")
+    validate_template_identity(read_text(native_makefile), "PKG_MAINTAINER", "native")
     require(LUCI_MAKEFILE_TEMPLATE.is_file(), "missing package/luci-app-nes-emulator/Makefile.upstream")
     validate_template_identity(
         read_text(LUCI_MAKEFILE_TEMPLATE),
@@ -350,12 +455,17 @@ def validate_templates() -> None:
         "LuCI",
     )
 
-    # Validate the LuCI payload against a temporary canonical filename without
-    # ever modifying the standalone package recipe.
+    # Validate both materialized payloads without modifying the standalone
+    # package recipes. Native runtime files are deliberately copied into the
+    # packages-feed tree so reviewers see the exact procd and UCI definitions.
     with tempfile.TemporaryDirectory(prefix="openwrt-nes-luci-template-") as temporary:
-        destination = Path(temporary) / "luci-app-nes-emulator"
-        copy_luci_tree(destination, maintainer=None)
-        validate_luci_tree(destination, None)
+        temporary_root = Path(temporary)
+        native_destination = temporary_root / "nes-emulator"
+        luci_destination = temporary_root / "luci-app-nes-emulator"
+        copy_native_tree(native_destination, maintainer=None)
+        validate_native_tree(native_destination, None)
+        copy_luci_tree(luci_destination, maintainer=None)
+        validate_luci_tree(luci_destination, None)
 
 
 def copy_regular_file(source: Path, destination: Path) -> None:
@@ -410,6 +520,13 @@ def materialize_identity(
 
 def copy_native_tree(destination: Path, maintainer: str | None) -> None:
     copy_tree(NATIVE_TEMPLATE, destination)
+    for filename in ("nes-emulator.init", "nes-emulator.config"):
+        copy_regular_file(NATIVE_RUNTIME_FILES / filename, destination / "files" / filename)
+    for filename in NATIVE_FCEUMM_PATCH_NAMES:
+        copy_regular_file(
+            NATIVE_FCEUMM_PATCHES / filename,
+            destination / "patches-fceumm" / filename,
+        )
     makefile = destination / "Makefile"
     makefile.write_text(
         materialize_identity(
@@ -428,7 +545,11 @@ def copy_luci_tree(destination: Path, maintainer: str | None) -> None:
     copy_tree(
         LUCI_SOURCE,
         destination,
-        excluded={Path("Makefile"), Path("Makefile.upstream")},
+        excluded={
+            Path("Makefile"),
+            Path("Makefile.upstream"),
+            Path("files/LICENSE-MIT"),
+        },
     )
     template = materialize_identity(
         read_text(LUCI_MAKEFILE_TEMPLATE),

@@ -1344,7 +1344,11 @@ def check_security_regressions() -> None:
     require(
         "tr '[:upper:]' '[:lower:]'" not in rpcd
         and "tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'" in rpcd
-        and "-exec du -b '{}' ';'" in rpcd
+        and "du -b" not in rpcd
+        and "mv -fT" not in rpcd
+        and "file_size_bytes()" in rpcd
+        and "wc -c <\"$1\"" in rpcd
+        and "-exec wc -c '{}' ';'" in rpcd
         and "-mmin +30 -o -newer" in rpcd
         and 'touch -d "@$future"' in rpcd,
         "rpcd relies on incomplete BusyBox features or cannot expire staged uploads",
@@ -2187,9 +2191,22 @@ def check_security_regressions() -> None:
     )
     require(
         '[ "$size" -ge 32 ] && [ "$magic" = 554e4946 ]' in rpcd
-        and 'mv -fT "$tmp" "$dest"' in rpcd
-        and '[ -f "$dest" ] && [ ! -L "$dest" ]' in rpcd,
+        and 'mv -f "$tmp" "$dest"' in rpcd
+        and '[ -f "$dest" ] && [ ! -L "$dest" ]' in rpcd
+        and rpcd.index('[ -f "$dest" ] && [ ! -L "$dest" ]')
+        < rpcd.index('mv -f "$tmp" "$dest"'),
         "rpcd import accepts truncated UNIF files or unsafe destinations",
+    )
+    require(
+        "nesd is the final path-security boundary" in rpcd
+        and "canonical_path_allowed" in http_source
+        and "realpath(path, resolved)" in http_source
+        and "path_under_root(resolved, srv->rom_roots[i])" in http_source
+        and "O_RDONLY | O_CLOEXEC | O_NOFOLLOW" in http_source
+        and "rom_fd_valid(fd, canonical" in http_source
+        and "outside-root.nes" in integration
+        and "outside-link.nes" in integration,
+        "forwarded LuCI load paths are not demonstrably confined by nesd",
     )
     require(
         'dd if="$staged" of="$tmp" bs=4096 count=4097' in rpcd
@@ -2515,6 +2532,10 @@ def check_upstream_export_contract() -> None:
     luci_pot = read("package/luci-app-nes-emulator/po/templates/nes-emulator.pot")
     installer = read("install.sh")
     build_script = read("scripts/build-apks.sh")
+    fceumm_patches = (
+        read("package/nes-emulator/patches/001-propagate-savestate-parse-errors.patch"),
+        read("package/nes-emulator/patches/002-load-supplied-rom-buffer.patch"),
+    )
 
     for reference in (
         "https://github.com/openwrt/packages/blob/master/CONTRIBUTING.md",
@@ -2553,10 +2574,12 @@ def check_upstream_export_contract() -> None:
         set(luci_depends.group(1).split()) >= upstream_dependencies
         and "include ../../luci.mk" in luci
         and "# call BuildPackage - OpenWrt buildroot signature" in luci
-        and "PKG_RELEASE:=1" in luci
+        and "PKG_VERSION:=" not in luci
+        and "PKG_RELEASE:=" not in luci
+        and "PKG_LICENSE_FILES:=" not in luci
         and "EXTRA_DEPENDS" not in luci
         and "nes-emulator (=" not in luci,
-        "upstream LuCI recipe does not use canonical unversioned dependencies",
+        "upstream LuCI recipe does not use canonical Git-derived metadata",
     )
     require(
         luci_pot.startswith(
@@ -2568,21 +2591,103 @@ def check_upstream_export_contract() -> None:
         "LuCI translation template is missing or was not generated in upstream layout",
     )
     require(
-        "PKG_RELEASE:=1" in native
+        "PKG_VERSION:=1.0.0" in native
+        and "PKG_RELEASE:=1" in native
         and "PKG_ASLR_PIE_REGULAR:=1" in native
-        and re.search(r"^PKG_HASH:=[0-9a-f]{64}$", native, re.MULTILINE)
-        and "/releases/download/v$(PROJECT_SOURCE_RELEASE)" in native
+        and "PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION).tar.gz" in native
+        and "codeload.github.com/communism420/openwrt-nes-emulator/"
+        "tar.gz/v$(PKG_VERSION)?" in native
+        and "PKG_HASH:=a47435bd02c5610144a105d39c8e2d0f4a9940ee9eff02452353accec038feba"
+        in native
         and "/latest/" not in native
         and "luci-app-nes-emulator" not in native,
         "native upstream template is mutable, unverified, or creates a dependency cycle",
     )
     require(
+        "PKG_FCEUMM_VERSION:=76f68314ce4213703174108f461c431001dcc204"
+        in native
+        and "define Download/fceumm" in native
+        and "libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz" in native
+        and "codeload.github.com/libretro/libretro-fceumm/tar.gz/"
+        "$(PKG_FCEUMM_VERSION)?" in native
+        and "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031"
+        in native
+        and "$(eval $(call Download,fceumm))" in native
+        and "FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm"
+        in native
+        and "define Build/Prepare" in native
+        and "$(call Build/Prepare/Default)" in native
+        and "$(call PatchDir,$(FCEUMM_BUILD_DIR)," in native
+        and "$(CURDIR)/patches-fceumm,)" in native
+        and "$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)" in native
+        and "define Quilt/Refresh/Package" in native
+        and "$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR)," in native
+        and "Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)"
+        in native
+        and 'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"' in native,
+        "native upstream template does not independently pin and patch FCEUmm",
+    )
+    require(
         "define Package/nes-emulator/postinst" in native
         and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native
-        and '[ -n "$${PKG_INSTROOT:-}" ] && exit 0' in native
+        and "$${PKG_INSTROOT" not in native
         and "NESD_ON_DEMAND=1 NESD_SKIP_AUTOLOAD=1" in native
-        and "/etc/init.d/nes-emulator preflight" in native,
-        "native upstream post-install does not prepare secure runtime ownership",
+        and "/etc/init.d/nes-emulator preflight" in native
+        and "\nexit 0\nendef" in native
+        and "$(INSTALL_BIN) $(CURDIR)/files/nes-emulator.init" in native
+        and "$(INSTALL_CONF) $(CURDIR)/files/nes-emulator.config" in native,
+        "native upstream runtime payload or best-effort post-install is incomplete",
+    )
+    for forbidden_variable in (
+        "PROJECT_SOURCE_RELEASE",
+        "PROJECT_SOURCE_DATE_EPOCH",
+        "PROJECT_URL",
+        "FCEUMM_SHORT_COMMIT",
+        "NESD_SOURCE_DIR",
+        "NESD_FILES_DIR",
+        "SOURCE_DATE_EPOCH",
+        "> $(PKG_BUILD_DIR)/version.date",
+        "-r19-source.tar.gz",
+        "/releases/download/",
+        'FCEUMM_GIT_VERSION="76f68314ce42"',
+        "$(INSTALL_DIR) $(1)/etc/nes-emulator",
+        "chmod 0750",
+    ):
+        require(
+            forbidden_variable not in native,
+            f"native upstream recipe retains redundant variable {forbidden_variable}",
+        )
+    for fceumm_patch in fceumm_patches:
+        require(
+            re.match(
+                r"^From [0-9a-f]{40} Mon Sep 17 00:00:00 2001\n"
+                r"From: Yaroslav Vereshchagin "
+                r"<yarik\.vereshchagin1996@gmail\.com>\n",
+                fceumm_patch,
+            )
+            is not None
+            and re.search(
+                r"^Date: .+\nSubject: \[PATCH [12]/2\] ",
+                fceumm_patch,
+                re.MULTILINE,
+            )
+            is not None
+            and "Upstream-Status:" in fceumm_patch
+            and "Signed-off-by: Yaroslav Vereshchagin "
+            "<yarik.vereshchagin1996@gmail.com>\n---\n" in fceumm_patch
+            and "--- a/" in fceumm_patch
+            and "+++ b/" in fceumm_patch,
+            "FCEUmm patch lacks reviewable authorship or upstream status",
+        )
+    require(
+        "Upstream-Status: Submitted "
+        "[https://github.com/libretro/libretro-fceumm/pull/653]"
+        in fceumm_patches[0]
+        and "Upstream-Status: Inappropriate [nesd frontend specific]"
+        in fceumm_patches[1]
+        and "need_fullpath=true" in fceumm_patches[1]
+        and "hash/load invariant" in fceumm_patches[1],
+        "FCEUmm patches do not document their exact upstream disposition",
     )
 
     require(

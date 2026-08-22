@@ -713,6 +713,18 @@ EOF
 	done
 }
 
+file_size_bytes() {
+	local size
+
+	[ -f "$1" ] && [ ! -L "$1" ] || return 1
+	size="$(
+		exec 7>&- 9>&-
+		wc -c <"$1" 2>/dev/null | tr -d ' \t'
+	)" || return 1
+	case "$size" in ''|*[!0-9]*) return 1 ;; esac
+	printf '%s\n' "$size"
+}
+
 scan_rom_root() {
 	local root="$1" resolved scan_dir fifo find_pid find_status=0
 	local full name ext size readable
@@ -757,11 +769,7 @@ scan_rom_root() {
 				tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'
 		)"
 		case "$ext" in nes|fds|unf|unif) ;; *) continue ;; esac
-		size="$(
-			exec 9>&-
-			du -b "$full" 2>/dev/null |
-				awk 'NR == 1 { print $1 }'
-		)" || continue
+		size="$(file_size_bytes "$full")" || continue
 		case "$size" in ''|*[!0-9]*) continue ;; esac
 		[ "$size" -le "$MAX_ROM_SIZE" ] 2>/dev/null || continue
 		rom_is_valid "$full" "$ext" "$size" || continue
@@ -948,7 +956,7 @@ storage_is_available() {
 		return 1
 	fi
 	if ! find "$ROM_DIR" -maxdepth "$MAX_ROM_FIND_DEPTH" -type f \
-		-exec du -b '{}' ';' >"$scan" 2>/dev/null 9>&-; then
+		-exec wc -c '{}' ';' >"$scan" 2>/dev/null 9>&-; then
 		rm -f "$scan" 9>&-
 		return 1
 	fi
@@ -966,11 +974,7 @@ storage_is_available() {
 	rm -f "$scan" 9>&-
 	case "$used" in ''|*[!0-9]*) return 1 ;; esac
 	if [ -f "$destination" ] && [ ! -L "$destination" ]; then
-		old_size="$(
-			exec 9>&-
-			du -b "$destination" 2>/dev/null |
-				awk 'NR == 1 { print $1 }'
-		)"
+		old_size="$(file_size_bytes "$destination")"
 		case "$old_size" in ''|*[!0-9]*) return 1 ;; esac
 	fi
 	effective=$((used - old_size + incoming))
@@ -1198,11 +1202,7 @@ import_rom_locked() {
 			return
 		}
 
-	size="$(
-		exec 9>&-
-		du -b "$staged" 2>/dev/null |
-			awk 'NR == 1 { print $1 }'
-	)"
+	size="$(file_size_bytes "$staged")"
 	case "$size" in ''|*[!0-9]*) size=0 ;; esac
 	[ "$size" -ge 16 ] && [ "$size" -le "$MAX_ROM_SIZE" ] || {
 		rm -f "$staged" 9>&-
@@ -1295,11 +1295,7 @@ import_rom_locked() {
 		json_error "cannot store ROM in the configured directory"
 		return
 	fi
-	actual_size="$(
-		exec 9>&-
-		du -b "$tmp" 2>/dev/null |
-			awk 'NR == 1 { print $1 }'
-	)"
+	actual_size="$(file_size_bytes "$tmp")"
 	case "$actual_size" in ''|*[!0-9]*) actual_size=0 ;; esac
 	if [ "$actual_size" -ne "$size" ] 2>/dev/null ||
 	   [ "$actual_size" -lt 16 ] 2>/dev/null ||
@@ -1317,7 +1313,7 @@ import_rom_locked() {
 		json_error "ROM quota exceeded or less than 8 MiB would remain free"
 		return
 	fi
-	if ! mv -fT "$tmp" "$dest" 9>&-; then
+	if ! mv -f "$tmp" "$dest" 9>&-; then
 		rm -f "$tmp" "$staged" 9>&-
 		json_error "cannot store ROM in the configured directory"
 		return
@@ -1479,6 +1475,10 @@ call)
 			json_error "path is required"
 			exit 0
 		}
+		# nesd is the final path-security boundary for this forwarded request.
+		# Its resolve_rom_path() canonicalizes with realpath(), confines the
+		# result to the configured primary or opt-in extra ROM roots, reopens it
+		# with O_NOFOLLOW, and validates the extension, size, and ROM header.
 		start_daemon || {
 			json_error "${START_ERROR:-nesd could not be started}"
 			exit 0

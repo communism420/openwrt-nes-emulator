@@ -518,6 +518,10 @@ def test_daemon(binary: Path) -> None:
             directory.mkdir(mode=0o750)
         primary = rom_dir / "battery.nes"
         primary.write_bytes(rom)
+        outside_rom = root / "outside-root.nes"
+        outside_rom.write_bytes(rom)
+        outside_link = rom_dir / "outside-link.nes"
+        outside_link.symlink_to(outside_rom)
         quoted = rom_dir / 'quote"name.nes'
         quoted.write_bytes(rom)
         unicode_rom = rom_dir / "игра.nes"
@@ -765,6 +769,10 @@ def test_daemon(binary: Path) -> None:
                 assert any(item.get("name") == "игра.nes" for item in roms["roms"])
                 assert any(item.get("path") == str(deep_rom) for item in roms["roms"])
                 assert all(
+                    item.get("path") not in (str(outside_rom), str(outside_link))
+                    for item in roms["roms"]
+                )
+                assert all(
                     item.get("readable") is True
                     for item in roms["roms"]
                     if item.get("name") != "root-only.nes"
@@ -784,6 +792,23 @@ def test_daemon(binary: Path) -> None:
                     )
                     assert status == 403, (status, locked_reply)
                     assert "mode 0640" in locked_reply.get("error", ""), locked_reply
+
+                # The loopback RPC client deliberately forwards an absolute
+                # path, so nesd must keep the final canonical-root boundary.
+                # Reject both a valid ROM outside the configured root and a
+                # symlink inside the root which resolves to that ROM.
+                for forbidden_path in (outside_rom, outside_link):
+                    status, rejected_load = json_request(
+                        port,
+                        "POST",
+                        "/api/load",
+                        json.dumps({"path": str(forbidden_path)}).encode(),
+                    )
+                    assert status == 400, (forbidden_path, rejected_load)
+                    assert "not allowed" in rejected_load.get("error", ""), (
+                        forbidden_path,
+                        rejected_load,
+                    )
 
                 # ensure_ascii=True deliberately exercises \uXXXX decoding.
                 payload = json.dumps({"path": str(unicode_rom)}).encode()
