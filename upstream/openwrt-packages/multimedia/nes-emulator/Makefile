@@ -4,12 +4,14 @@ PKG_NAME:=nes-emulator
 PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
 
-# r19 is the upstream project's source-release identifier. OpenWrt package
-# revisions start at 1 for a new packages-feed entry.
-PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION)-r19-source.tar.gz
-PKG_SOURCE_URL:=https://github.com/communism420/openwrt-nes-emulator/releases/download/v$(PKG_VERSION)-r19
-PKG_HASH:=e3ec5c28cdc1bfd7f600854088add79f47c19d2c7c318b89d9c2153ac3541b3c
-PKG_BUILD_DIR:=$(BUILD_DIR)/openwrt-nes-emulator-$(PKG_VERSION)-r19-source
+PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/communism420/openwrt-nes-emulator/tar.gz/v$(PKG_VERSION)?
+PKG_HASH:=a47435bd02c5610144a105d39c8e2d0f4a9940ee9eff02452353accec038feba
+PKG_BUILD_DIR:=$(BUILD_DIR)/openwrt-nes-emulator-$(PKG_VERSION)
+
+# The main repository intentionally does not vendor this large upstream core.
+# Keep the full commit so downloads and compiled provenance use the same pin.
+PKG_FCEUMM_VERSION:=76f68314ce4213703174108f461c431001dcc204
 
 PKG_LICENSE:=MIT GPL-2.0-only
 PKG_LICENSE_FILES:=LICENSE third_party/libretro-fceumm/Copying
@@ -18,6 +20,13 @@ PKG_BUILD_PARALLEL:=1
 PKG_ASLR_PIE_REGULAR:=1
 
 include $(INCLUDE_DIR)/package.mk
+
+define Download/fceumm
+  FILE:=libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz
+  URL:=https://codeload.github.com/libretro/libretro-fceumm/tar.gz/$(PKG_FCEUMM_VERSION)?
+  HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031
+endef
+$(eval $(call Download,fceumm))
 
 define Package/nes-emulator
   SECTION:=multimedia
@@ -38,12 +47,22 @@ define Package/nes-emulator/conffiles
 /etc/config/nes-emulator
 endef
 
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/third_party/libretro-fceumm
+	gzip -dc $(DL_DIR)/libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz | \
+		$(HOST_TAR) --strip-components=1 \
+			-C $(PKG_BUILD_DIR)/third_party/libretro-fceumm $(TAR_OPTIONS)
+	$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,\
+		$(CURDIR)/patches-fceumm,)
+endef
+
 define Build/Compile
 	+$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR)/package/nes-emulator/src \
 		BUILD_DIR="$(PKG_BUILD_DIR)/.nesd-build" \
 		TARGET="$(PKG_BUILD_DIR)/nesd" \
 		FCEUMM_DIR="$(PKG_BUILD_DIR)/third_party/libretro-fceumm" \
-		FCEUMM_GIT_VERSION="76f68314ce42" \
+		FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)" \
 		FCEUMM_ENDIAN_CPPFLAGS="$(if $(filter y,$(CONFIG_BIG_ENDIAN)),-DMSB_FIRST)" \
 		CC="$(TARGET_CC)" \
 		AR="$(TARGET_AR)" \
@@ -65,18 +84,6 @@ define Package/nes-emulator/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) $(CURDIR)/files/nes-emulator.config \
 		$(1)/etc/config/nes-emulator
-
-	# The visible init script's preflight repairs this package-owned tree to
-	# root:nesd for the parent and nesd:nesd for the managed data directories.
-	# All three data paths are configurable for users with mounted storage.
-	$(INSTALL_DIR) $(1)/etc/nes-emulator/roms
-	$(INSTALL_DIR) $(1)/etc/nes-emulator/saves
-	$(INSTALL_DIR) $(1)/etc/nes-emulator/system
-	chmod 0750 \
-		$(1)/etc/nes-emulator \
-		$(1)/etc/nes-emulator/roms \
-		$(1)/etc/nes-emulator/saves \
-		$(1)/etc/nes-emulator/system
 endef
 
 define Package/nes-emulator/postinst

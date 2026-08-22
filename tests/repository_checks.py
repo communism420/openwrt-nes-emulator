@@ -2532,6 +2532,10 @@ def check_upstream_export_contract() -> None:
     luci_pot = read("package/luci-app-nes-emulator/po/templates/nes-emulator.pot")
     installer = read("install.sh")
     build_script = read("scripts/build-apks.sh")
+    fceumm_patches = (
+        read("package/nes-emulator/patches/001-propagate-savestate-parse-errors.patch"),
+        read("package/nes-emulator/patches/002-load-supplied-rom-buffer.patch"),
+    )
 
     for reference in (
         "https://github.com/openwrt/packages/blob/master/CONTRIBUTING.md",
@@ -2587,13 +2591,35 @@ def check_upstream_export_contract() -> None:
         "LuCI translation template is missing or was not generated in upstream layout",
     )
     require(
-        "PKG_RELEASE:=1" in native
+        "PKG_VERSION:=1.0.0" in native
+        and "PKG_RELEASE:=1" in native
         and "PKG_ASLR_PIE_REGULAR:=1" in native
-        and re.search(r"^PKG_HASH:=[0-9a-f]{64}$", native, re.MULTILINE)
-        and "/releases/download/v$(PKG_VERSION)-r19" in native
+        and "PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION).tar.gz" in native
+        and "codeload.github.com/communism420/openwrt-nes-emulator/"
+        "tar.gz/v$(PKG_VERSION)?" in native
+        and "PKG_HASH:=a47435bd02c5610144a105d39c8e2d0f4a9940ee9eff02452353accec038feba"
+        in native
         and "/latest/" not in native
         and "luci-app-nes-emulator" not in native,
         "native upstream template is mutable, unverified, or creates a dependency cycle",
+    )
+    require(
+        "PKG_FCEUMM_VERSION:=76f68314ce4213703174108f461c431001dcc204"
+        in native
+        and "define Download/fceumm" in native
+        and "libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz" in native
+        and "codeload.github.com/libretro/libretro-fceumm/tar.gz/"
+        "$(PKG_FCEUMM_VERSION)?" in native
+        and "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031"
+        in native
+        and "$(eval $(call Download,fceumm))" in native
+        and "define Build/Prepare" in native
+        and "$(call Build/Prepare/Default)" in native
+        and "$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,"
+        in native
+        and "$(CURDIR)/patches-fceumm,)" in native
+        and 'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"' in native,
+        "native upstream template does not independently pin and patch FCEUmm",
     )
     require(
         "define Package/nes-emulator/postinst" in native
@@ -2615,10 +2641,36 @@ def check_upstream_export_contract() -> None:
         "NESD_FILES_DIR",
         "SOURCE_DATE_EPOCH",
         "> $(PKG_BUILD_DIR)/version.date",
+        "-r19-source.tar.gz",
+        "/releases/download/",
+        'FCEUMM_GIT_VERSION="76f68314ce42"',
+        "$(INSTALL_DIR) $(1)/etc/nes-emulator",
+        "chmod 0750",
     ):
         require(
             forbidden_variable not in native,
             f"native upstream recipe retains redundant variable {forbidden_variable}",
+        )
+    for fceumm_patch in fceumm_patches:
+        require(
+            re.match(
+                r"^From [0-9a-f]{40} Mon Sep 17 00:00:00 2001\n"
+                r"From: Yaroslav Vereshchagin "
+                r"<yarik\.vereshchagin1996@gmail\.com>\n",
+                fceumm_patch,
+            )
+            is not None
+            and re.search(
+                r"^Date: .+\nSubject: \[PATCH [12]/2\] ",
+                fceumm_patch,
+                re.MULTILINE,
+            )
+            is not None
+            and "Upstream-Status:" in fceumm_patch
+            and "Signed-off-by: Yaroslav Vereshchagin "
+            "<yarik.vereshchagin1996@gmail.com>\n---\n" in fceumm_patch
+            and "diff --git a/" in fceumm_patch,
+            "FCEUmm patch lacks reviewable authorship or upstream status",
         )
 
     require(

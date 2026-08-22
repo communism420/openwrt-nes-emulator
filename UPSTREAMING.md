@@ -5,7 +5,7 @@ maintaining two clean submission trees:
 
 | Submit to | Exported subtree | Purpose |
 |---|---|---|
-| [`openwrt/packages`](https://github.com/openwrt/packages) | `multimedia/nes-emulator` | Native build recipe for the daemon, init script, UCI defaults, and bundled core |
+| [`openwrt/packages`](https://github.com/openwrt/packages) | `multimedia/nes-emulator` | Native build recipe, reviewed service files, and independently pinned FCEUmm core |
 | [`openwrt/luci`](https://github.com/openwrt/luci) | `applications/luci-app-nes-emulator` | LuCI pages, ACL/menu data, and the RPCD bridge |
 
 The trees must be reviewed and submitted as two separate pull requests. Merge
@@ -47,6 +47,20 @@ build/openwrt-upstream/openwrt-luci/applications/luci-app-nes-emulator
 do not copy them into either upstream repository. The marker appends `-dirty`
 to its source revision whenever the project worktree has uncommitted changes;
 make the final export from a clean, reviewed commit.
+
+The native recipe downloads the canonical `v1.0.0` project codeload and the
+full FCEUmm commit `76f68314ce4213703174108f461c431001dcc204` as two separately
+hash-pinned archives. The exporter copies the two local core changes into
+`patches-fceumm/`; `Build/Prepare` unpacks the secondary archive and applies
+them with OpenWrt's `PatchDir` helper. This keeps the project source, upstream
+core provenance, and every downstream patch independently reviewable. The
+patches retain their author, DCO sign-off, and truthful `Upstream-Status`.
+
+The former `v1.0.0-r19` tag remains the standalone feed's package revision.
+The official recipe deliberately uses the canonical software tag `v1.0.0`
+and starts its independent OpenWrt `PKG_RELEASE` at `1`; both tags peel to the
+same audited source commit. Future source changes must use a new semantic
+software version such as `v1.0.1`, never move either published tag.
 
 After copying the LuCI tree into its fork, stage it and explicitly preserve the
 RPCD bridge's executable bit (especially when working from Windows):
@@ -164,6 +178,8 @@ upgrade. An SDK compile alone does not replace router testing.
 - [ ] Confirm the exported source URLs are tag-scoped and every declared hash
       matches the downloaded archive. Do not replace assets behind published
       tags.
+- [ ] Confirm the FCEUmm secondary download is pinned by its full commit and
+      SHA-256, and both `patches-fceumm/` files apply with unchanged hunks.
 - [ ] Confirm the native recipe starts at `PKG_RELEASE:=1`; leave both
       `PKG_VERSION` and `PKG_RELEASE` unset in the LuCI recipe so `luci.mk`
       uses its Git-derived package version.

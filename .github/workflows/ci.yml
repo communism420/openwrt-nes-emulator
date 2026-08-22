@@ -50,8 +50,8 @@ jobs:
             sha256sum --check --strict
           tar -xzf fceumm.tar.gz
           printf '%s  %s\n%s  %s\n' \
-            "5402c5d7c4df5a3c6ea3f721aa8abfc6f6bc5242ddb69b50a75a7b07ea492c3e" "$STATE_PATCH" \
-            "8bb6a69091796b5af3c3bce2a4d4b8bb33e6751a3019370660edcabb842cbf32" "$ROM_BUFFER_PATCH" |
+            "aa4df04948097d18985147143bf021bf3d49292ea5bf30c4de9d6264b1ec7c2a" "$STATE_PATCH" \
+            "6db3db8b2faeff32b416abe500629ac52403b822bf0b4905273667d80903e136" "$ROM_BUFFER_PATCH" |
             sha256sum --check --strict
           patch --batch --forward -d "$FCEUMM_DIR" -p1 < "$STATE_PATCH"
           patch --batch --forward -d "$FCEUMM_DIR" -p1 < "$ROM_BUFFER_PATCH"

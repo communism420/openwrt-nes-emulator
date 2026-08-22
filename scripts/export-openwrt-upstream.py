@@ -23,6 +23,11 @@ NATIVE_TEMPLATE = (
     ROOT / "upstream" / "openwrt-packages" / "multimedia" / "nes-emulator"
 )
 NATIVE_RUNTIME_FILES = ROOT / "package" / "nes-emulator" / "files"
+NATIVE_FCEUMM_PATCHES = ROOT / "package" / "nes-emulator" / "patches"
+NATIVE_FCEUMM_PATCH_NAMES = (
+    "001-propagate-savestate-parse-errors.patch",
+    "002-load-supplied-rom-buffer.patch",
+)
 LUCI_SOURCE = ROOT / "package" / "luci-app-nes-emulator"
 LUCI_MAKEFILE_TEMPLATE = LUCI_SOURCE / "Makefile.upstream"
 DEFAULT_OUTPUT = ROOT / "build" / "openwrt-upstream"
@@ -210,9 +215,20 @@ def validate_native_tree(
         "PKG_RELEASE:=1",
         "PKG_LICENSE:=",
         "PKG_HASH:=",
+        "PKG_FCEUMM_VERSION:=76f68314ce4213703174108f461c431001dcc204",
         "PKG_ASLR_PIE_REGULAR:=1",
         "include $(INCLUDE_DIR)/package.mk",
+        "define Download/fceumm",
+        "FILE:=libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz",
+        "URL:=https://codeload.github.com/libretro/libretro-fceumm/tar.gz/$(PKG_FCEUMM_VERSION)?",
+        "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031",
+        "$(eval $(call Download,fceumm))",
+        "define Build/Prepare",
+        "$(call Build/Prepare/Default)",
+        "$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,",
+        "$(CURDIR)/patches-fceumm,)",
         "define Build/Compile",
+        'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"',
         "define Package/nes-emulator/install",
         "define Package/nes-emulator/postinst",
         '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0',
@@ -226,6 +242,14 @@ def validate_native_tree(
     require(
         re.search(r"^PKG_HASH:=[0-9a-f]{64}$", makefile, re.MULTILINE) is not None,
         "native project source hash is missing or not SHA-256",
+    )
+    require(
+        "PKG_SOURCE:=openwrt-nes-emulator-$(PKG_VERSION).tar.gz" in makefile
+        and "PKG_SOURCE_URL:=https://codeload.github.com/communism420/"
+        "openwrt-nes-emulator/tar.gz/v$(PKG_VERSION)?" in makefile
+        and "PKG_HASH:=a47435bd02c5610144a105d39c8e2d0f4a9940ee9eff02452353accec038feba"
+        in makefile,
+        "native project source is not the canonical hash-pinned v1.0.0 codeload",
     )
     require(
         "/latest/" not in makefile
@@ -249,6 +273,11 @@ def validate_native_tree(
         "$${PKG_INSTROOT",
         "SOURCE_DATE_EPOCH",
         "> $(PKG_BUILD_DIR)/version.date",
+        "-r19-source.tar.gz",
+        "/releases/download/",
+        'FCEUMM_GIT_VERSION="76f68314ce42"',
+        "$(INSTALL_DIR) $(1)/etc/nes-emulator",
+        "chmod 0750",
     ):
         require(
             forbidden not in makefile,
@@ -267,6 +296,33 @@ def validate_native_tree(
         read_text(default_config).startswith("config nes-emulator 'main'\n"),
         "native upstream UCI defaults are malformed",
     )
+    patch_directory = root / "patches-fceumm"
+    require(
+        patch_directory.is_dir()
+        and {path.name for path in patch_directory.iterdir()}
+        == set(NATIVE_FCEUMM_PATCH_NAMES),
+        "native upstream tree does not contain exactly the two reviewed FCEUmm patches",
+    )
+    for patch_name in NATIVE_FCEUMM_PATCH_NAMES:
+        patch_path = patch_directory / patch_name
+        require(patch_path in files, f"native upstream tree omits {patch_name}")
+        patch = read_text(patch_path)
+        require(
+            re.match(
+                r"^From [0-9a-f]{40} Mon Sep 17 00:00:00 2001\n"
+                r"From: Yaroslav Vereshchagin "
+                r"<yarik\.vereshchagin1996@gmail\.com>\n",
+                patch,
+            )
+            is not None
+            and re.search(r"^Date: .+\nSubject: \[PATCH [12]/2\] ", patch, re.MULTILINE)
+            is not None
+            and "Upstream-Status:" in patch
+            and "Signed-off-by: Yaroslav Vereshchagin "
+            "<yarik.vereshchagin1996@gmail.com>\n---\n" in patch
+            and "diff --git a/" in patch,
+            f"native FCEUmm patch lacks reviewable authorship metadata: {patch_name}",
+        )
     if template:
         validate_template_identity(makefile, "PKG_MAINTAINER", "native")
     else:
@@ -451,6 +507,11 @@ def copy_native_tree(destination: Path, maintainer: str | None) -> None:
     copy_tree(NATIVE_TEMPLATE, destination)
     for filename in ("nes-emulator.init", "nes-emulator.config"):
         copy_regular_file(NATIVE_RUNTIME_FILES / filename, destination / "files" / filename)
+    for filename in NATIVE_FCEUMM_PATCH_NAMES:
+        copy_regular_file(
+            NATIVE_FCEUMM_PATCHES / filename,
+            destination / "patches-fceumm" / filename,
+        )
     makefile = destination / "Makefile"
     makefile.write_text(
         materialize_identity(
