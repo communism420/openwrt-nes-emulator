@@ -207,6 +207,15 @@ def check_clean_export(output: Path) -> None:
         == (ROOT / "package/nes-emulator/files/nes-emulator.config").read_bytes(),
         "native export does not expose the exact reviewed init/UCI payload",
     )
+    patch_statuses = {
+        "001-propagate-savestate-parse-errors.patch": (
+            "Upstream-Status: Submitted "
+            "[https://github.com/libretro/libretro-fceumm/pull/653]"
+        ),
+        "002-load-supplied-rom-buffer.patch": (
+            "Upstream-Status: Inappropriate [nesd frontend specific]"
+        ),
+    }
     for patch_name in (
         "001-propagate-savestate-parse-errors.patch",
         "002-load-supplied-rom-buffer.patch",
@@ -228,7 +237,8 @@ def check_clean_export(output: Path) -> None:
                 re.MULTILINE,
             )
             is not None
-            and "Upstream-Status:" in exported_patch.read_text(encoding="utf-8")
+            and patch_statuses[patch_name]
+            in exported_patch.read_text(encoding="utf-8")
             and "Signed-off-by: Yaroslav Vereshchagin "
             "<yarik.vereshchagin1996@gmail.com>" in exported_patch.read_text(
                 encoding="utf-8"
@@ -281,10 +291,21 @@ def check_clean_export(output: Path) -> None:
     require(
         "define Build/Prepare" in native_makefile
         and "$(call Build/Prepare/Default)" in native_makefile
-        and "$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,"
+        and "FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm"
         in native_makefile
+        and "$(call PatchDir,$(FCEUMM_BUILD_DIR)," in native_makefile
         and "$(CURDIR)/patches-fceumm,)" in native_makefile,
         "native export does not conventionally unpack and patch its secondary core",
+    )
+    require(
+        "$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)"
+        in native_makefile
+        and "define Quilt/Refresh/Package" in native_makefile
+        and "$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR),"
+        in native_makefile
+        and "Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)"
+        in native_makefile,
+        "native export cannot refresh its separately unpacked FCEUmm patch stack",
     )
 
     modes = (output / "FILE_MODES").read_text(encoding="ascii")

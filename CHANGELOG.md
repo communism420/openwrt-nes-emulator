@@ -9,6 +9,8 @@ upgraded as a matching `nes-emulator` and `luci-app-nes-emulator` pair.
   `openwrt/luci` submissions, including canonical dependencies, PIE hardening,
   secure first-install preparation, file-mode manifests, and an upstreaming
   checklist.
+- Added an idempotent OpenWrt quilt refresh path for the separately downloaded
+  FCEUmm patch stack and submitted the generic savestate fix upstream.
 - Added a fail-closed OpenWrt installer that detects the router's exact package
   ABI, selects the latest matching GitHub release, verifies both package
   checksums, and installs the native daemon and LuCI application together.

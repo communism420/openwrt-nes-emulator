@@ -2613,11 +2613,17 @@ def check_upstream_export_contract() -> None:
         and "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031"
         in native
         and "$(eval $(call Download,fceumm))" in native
+        and "FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm"
+        in native
         and "define Build/Prepare" in native
         and "$(call Build/Prepare/Default)" in native
-        and "$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,"
-        in native
+        and "$(call PatchDir,$(FCEUMM_BUILD_DIR)," in native
         and "$(CURDIR)/patches-fceumm,)" in native
+        and "$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)" in native
+        and "define Quilt/Refresh/Package" in native
+        and "$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR)," in native
+        and "Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)"
+        in native
         and 'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"' in native,
         "native upstream template does not independently pin and patch FCEUmm",
     )
@@ -2669,9 +2675,20 @@ def check_upstream_export_contract() -> None:
             and "Upstream-Status:" in fceumm_patch
             and "Signed-off-by: Yaroslav Vereshchagin "
             "<yarik.vereshchagin1996@gmail.com>\n---\n" in fceumm_patch
-            and "diff --git a/" in fceumm_patch,
+            and "--- a/" in fceumm_patch
+            and "+++ b/" in fceumm_patch,
             "FCEUmm patch lacks reviewable authorship or upstream status",
         )
+    require(
+        "Upstream-Status: Submitted "
+        "[https://github.com/libretro/libretro-fceumm/pull/653]"
+        in fceumm_patches[0]
+        and "Upstream-Status: Inappropriate [nesd frontend specific]"
+        in fceumm_patches[1]
+        and "need_fullpath=true" in fceumm_patches[1]
+        and "hash/load invariant" in fceumm_patches[1],
+        "FCEUmm patches do not document their exact upstream disposition",
+    )
 
     require(
         "EXTRA_DEPENDS:=nes-emulator (=$(PKG_VERSION)-r$(PKG_RELEASE))"

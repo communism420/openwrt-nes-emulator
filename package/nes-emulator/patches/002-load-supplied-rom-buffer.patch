@@ -9,17 +9,22 @@ region detection and auxiliary-resource naming while loading the exact bytes
 that the frontend hashed. This closes the path/inode modification window
 between hashing and FCEUmm parsing.
 
-Upstream-Status: Not submitted [project-specific integration]
+This package links the patched core only into nesd. FCEUmm advertises
+need_fullpath=true when content-info overrides are unavailable, so generic
+frontends may leave retro_game_info.data and size invalid. nesd deliberately
+supplies path, data and size together after reading and hashing the ROM.
+Loading that explicit buffer preserves nesd's hash/load invariant and is
+therefore kept as a downstream integration.
+
+Upstream-Status: Inappropriate [nesd frontend specific]
 Signed-off-by: Yaroslav Vereshchagin <yarik.vereshchagin1996@gmail.com>
 ---
  src/drivers/libretro/libretro.c | 6 ++++++
  1 file changed, 6 insertions(+)
 
-diff --git a/src/drivers/libretro/libretro.c b/src/drivers/libretro/libretro.c
-index 5ecaa3f..79cc7b7 100644
 --- a/src/drivers/libretro/libretro.c
 +++ b/src/drivers/libretro/libretro.c
-@@ -3966,6 +3966,12 @@ bool retro_load_game(const struct retro_game_info *info)
+@@ -3966,6 +3966,12 @@ bool retro_load_game(const struct retro_
  
        strlcpy(content_path, info->path,
              sizeof(content_path));

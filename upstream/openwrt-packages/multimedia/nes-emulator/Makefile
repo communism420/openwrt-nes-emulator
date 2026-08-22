@@ -21,6 +21,8 @@ PKG_ASLR_PIE_REGULAR:=1
 
 include $(INCLUDE_DIR)/package.mk
 
+FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm
+
 define Download/fceumm
   FILE:=libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz
   URL:=https://codeload.github.com/libretro/libretro-fceumm/tar.gz/$(PKG_FCEUMM_VERSION)?
@@ -49,19 +51,28 @@ endef
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	$(INSTALL_DIR) $(PKG_BUILD_DIR)/third_party/libretro-fceumm
+	$(INSTALL_DIR) $(FCEUMM_BUILD_DIR)
 	gzip -dc $(DL_DIR)/libretro-fceumm-$(PKG_FCEUMM_VERSION).tar.gz | \
 		$(HOST_TAR) --strip-components=1 \
-			-C $(PKG_BUILD_DIR)/third_party/libretro-fceumm $(TAR_OPTIONS)
-	$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,\
+			-C $(FCEUMM_BUILD_DIR) $(TAR_OPTIONS)
+	$(call PatchDir,$(FCEUMM_BUILD_DIR),\
 		$(CURDIR)/patches-fceumm,)
+	$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)
 endef
+
+define Quilt/Refresh/Package
+	$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR),\
+		$(CURDIR)/patches-fceumm)
+endef
+
+# The only downstream patch stack belongs to the separately unpacked core.
+Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)
 
 define Build/Compile
 	+$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR)/package/nes-emulator/src \
 		BUILD_DIR="$(PKG_BUILD_DIR)/.nesd-build" \
 		TARGET="$(PKG_BUILD_DIR)/nesd" \
-		FCEUMM_DIR="$(PKG_BUILD_DIR)/third_party/libretro-fceumm" \
+		FCEUMM_DIR="$(FCEUMM_BUILD_DIR)" \
 		FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)" \
 		FCEUMM_ENDIAN_CPPFLAGS="$(if $(filter y,$(CONFIG_BIG_ENDIAN)),-DMSB_FIRST)" \
 		CC="$(TARGET_CC)" \

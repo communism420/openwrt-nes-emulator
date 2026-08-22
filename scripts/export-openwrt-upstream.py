@@ -223,10 +223,15 @@ def validate_native_tree(
         "URL:=https://codeload.github.com/libretro/libretro-fceumm/tar.gz/$(PKG_FCEUMM_VERSION)?",
         "HASH:=b067ebd0a973751e9b5af56f5b54d74d0a6e67349549b392a4615d3f0d44f031",
         "$(eval $(call Download,fceumm))",
+        "FCEUMM_BUILD_DIR:=$(PKG_BUILD_DIR)/third_party/libretro-fceumm",
         "define Build/Prepare",
         "$(call Build/Prepare/Default)",
-        "$(call PatchDir,$(PKG_BUILD_DIR)/third_party/libretro-fceumm,",
+        "$(call PatchDir,$(FCEUMM_BUILD_DIR),",
         "$(CURDIR)/patches-fceumm,)",
+        "$(if $(QUILT),touch $(FCEUMM_BUILD_DIR)/.quilt_used)",
+        "define Quilt/Refresh/Package",
+        "$(call Quilt/RefreshDir,$(FCEUMM_BUILD_DIR),",
+        "Build/Quilt=$(call Quilt/Template,$(FCEUMM_BUILD_DIR),,,Package)",
         "define Build/Compile",
         'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"',
         "define Package/nes-emulator/install",
@@ -303,6 +308,15 @@ def validate_native_tree(
         == set(NATIVE_FCEUMM_PATCH_NAMES),
         "native upstream tree does not contain exactly the two reviewed FCEUmm patches",
     )
+    patch_statuses = {
+        "001-propagate-savestate-parse-errors.patch": (
+            "Upstream-Status: Submitted "
+            "[https://github.com/libretro/libretro-fceumm/pull/653]"
+        ),
+        "002-load-supplied-rom-buffer.patch": (
+            "Upstream-Status: Inappropriate [nesd frontend specific]"
+        ),
+    }
     for patch_name in NATIVE_FCEUMM_PATCH_NAMES:
         patch_path = patch_directory / patch_name
         require(patch_path in files, f"native upstream tree omits {patch_name}")
@@ -317,10 +331,11 @@ def validate_native_tree(
             is not None
             and re.search(r"^Date: .+\nSubject: \[PATCH [12]/2\] ", patch, re.MULTILINE)
             is not None
-            and "Upstream-Status:" in patch
+            and patch_statuses[patch_name] in patch
             and "Signed-off-by: Yaroslav Vereshchagin "
             "<yarik.vereshchagin1996@gmail.com>\n---\n" in patch
-            and "diff --git a/" in patch,
+            and "--- a/" in patch
+            and "+++ b/" in patch,
             f"native FCEUmm patch lacks reviewable authorship metadata: {patch_name}",
         )
     if template:
