@@ -28,6 +28,16 @@ NATIVE_FCEUMM_PATCH_NAMES = (
     "001-propagate-savestate-parse-errors.patch",
     "002-load-supplied-rom-buffer.patch",
 )
+NATIVE_FCEUMM_BACKPORT_PATCH = "001-propagate-savestate-parse-errors.patch"
+NATIVE_FCEUMM_SOURCE_STATUS = (
+    "Upstream-Status: Submitted "
+    "[https://github.com/libretro/libretro-fceumm/pull/653]"
+)
+NATIVE_FCEUMM_EXPORT_STATUS = (
+    "Upstream-Status: Backport "
+    "[https://github.com/libretro/libretro-fceumm/commit/"
+    "3db086eabeb6608706df330e7991b1bce8d25fba]"
+)
 LUCI_SOURCE = ROOT / "package" / "luci-app-nes-emulator"
 LUCI_MAKEFILE_TEMPLATE = LUCI_SOURCE / "Makefile.upstream"
 DEFAULT_OUTPUT = ROOT / "build" / "openwrt-upstream"
@@ -309,10 +319,7 @@ def validate_native_tree(
         "native upstream tree does not contain exactly the two reviewed FCEUmm patches",
     )
     patch_statuses = {
-        "001-propagate-savestate-parse-errors.patch": (
-            "Upstream-Status: Submitted "
-            "[https://github.com/libretro/libretro-fceumm/pull/653]"
-        ),
+        "001-propagate-savestate-parse-errors.patch": NATIVE_FCEUMM_EXPORT_STATUS,
         "002-load-supplied-rom-buffer.patch": (
             "Upstream-Status: Inappropriate [nesd frontend specific]"
         ),
@@ -523,10 +530,27 @@ def copy_native_tree(destination: Path, maintainer: str | None) -> None:
     for filename in ("nes-emulator.init", "nes-emulator.config"):
         copy_regular_file(NATIVE_RUNTIME_FILES / filename, destination / "files" / filename)
     for filename in NATIVE_FCEUMM_PATCH_NAMES:
+        destination_patch = destination / "patches-fceumm" / filename
         copy_regular_file(
             NATIVE_FCEUMM_PATCHES / filename,
-            destination / "patches-fceumm" / filename,
+            destination_patch,
         )
+        if filename == NATIVE_FCEUMM_BACKPORT_PATCH:
+            patch = read_text(destination_patch)
+            require(
+                patch.count(NATIVE_FCEUMM_SOURCE_STATUS) == 1
+                and NATIVE_FCEUMM_EXPORT_STATUS not in patch,
+                f"native FCEUmm patch has an unexpected upstream status: {filename}",
+            )
+            destination_patch.write_text(
+                patch.replace(
+                    NATIVE_FCEUMM_SOURCE_STATUS,
+                    NATIVE_FCEUMM_EXPORT_STATUS,
+                    1,
+                ),
+                encoding="utf-8",
+                newline="\n",
+            )
     makefile = destination / "Makefile"
     makefile.write_text(
         materialize_identity(

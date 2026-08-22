@@ -209,8 +209,9 @@ def check_clean_export(output: Path) -> None:
     )
     patch_statuses = {
         "001-propagate-savestate-parse-errors.patch": (
-            "Upstream-Status: Submitted "
-            "[https://github.com/libretro/libretro-fceumm/pull/653]"
+            "Upstream-Status: Backport "
+            "[https://github.com/libretro/libretro-fceumm/commit/"
+            "3db086eabeb6608706df330e7991b1bce8d25fba]"
         ),
         "002-load-supplied-rom-buffer.patch": (
             "Upstream-Status: Inappropriate [nesd frontend specific]"
@@ -222,27 +223,42 @@ def check_clean_export(output: Path) -> None:
     ):
         exported_patch = native / "patches-fceumm" / patch_name
         source_patch = ROOT / "package/nes-emulator/patches" / patch_name
+        source_patch_text = source_patch.read_text(encoding="utf-8")
+        exported_patch_text = exported_patch.read_text(encoding="utf-8")
+        expected_patch_text = source_patch_text
+        if patch_name == "001-propagate-savestate-parse-errors.patch":
+            submitted_status = (
+                "Upstream-Status: Submitted "
+                "[https://github.com/libretro/libretro-fceumm/pull/653]"
+            )
+            require(
+                source_patch_text.count(submitted_status) == 1,
+                "standalone FCEUmm patch 001 has unexpected source metadata",
+            )
+            expected_patch_text = source_patch_text.replace(
+                submitted_status,
+                patch_statuses[patch_name],
+                1,
+            )
         require(
-            exported_patch.read_bytes() == source_patch.read_bytes()
+            exported_patch_text == expected_patch_text
             and re.match(
                 r"^From [0-9a-f]{40} Mon Sep 17 00:00:00 2001\n"
                 r"From: Yaroslav Vereshchagin "
                 r"<yarik\.vereshchagin1996@gmail\.com>\n",
-                exported_patch.read_text(encoding="utf-8"),
+                exported_patch_text,
             )
             is not None
             and re.search(
                 r"^Date: .+\nSubject: \[PATCH [12]/2\] ",
-                exported_patch.read_text(encoding="utf-8"),
+                exported_patch_text,
                 re.MULTILINE,
             )
             is not None
             and patch_statuses[patch_name]
-            in exported_patch.read_text(encoding="utf-8")
+            in exported_patch_text
             and "Signed-off-by: Yaroslav Vereshchagin "
-            "<yarik.vereshchagin1996@gmail.com>" in exported_patch.read_text(
-                encoding="utf-8"
-            ),
+            "<yarik.vereshchagin1996@gmail.com>" in exported_patch_text,
             f"native export lacks the exact reviewable FCEUmm patch {patch_name}",
         )
     translation_template = (

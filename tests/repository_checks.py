@@ -2701,6 +2701,19 @@ def check_upstream_export_contract() -> None:
         and "hash/load invariant" in fceumm_patches[1],
         "FCEUmm patches do not document their exact upstream disposition",
     )
+    require(
+        'NATIVE_FCEUMM_BACKPORT_PATCH = '
+        '"001-propagate-savestate-parse-errors.patch"' in exporter
+        and '"Upstream-Status: Submitted "' in exporter
+        and '"Upstream-Status: Backport "' in exporter
+        and "3db086eabeb6608706df330e7991b1bce8d25fba" in exporter
+        and "patch.count(NATIVE_FCEUMM_SOURCE_STATUS) == 1" in exporter
+        and "including the exported Backport metadata" in guide
+        and "newer core revisions raise `FCEU_VERSION_NUMERIC`" in guide
+        and "quilt refresh preserves that status header" in guide
+        and "3db086eabeb6608706df330e7991b1bce8d25fba" in contract,
+        "official export does not materialize the merged FCEUmm backport status",
+    )
 
     require(
         "EXTRA_DEPENDS:=nes-emulator (=$(PKG_VERSION)-r$(PKG_RELEASE))"

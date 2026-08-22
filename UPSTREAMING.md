@@ -54,7 +54,12 @@ hash-pinned archives. The exporter copies the two local core changes into
 `patches-fceumm/`; `Build/Prepare` unpacks the secondary archive and applies
 them with OpenWrt's `PatchDir` helper. This keeps the project source, upstream
 core provenance, and every downstream patch independently reviewable. The
-patches retain their author, DCO sign-off, and truthful `Upstream-Status`.
+patches retain their author and DCO sign-off. FCEUmm has since accepted the
+savestate change, so the exporter deterministically changes only patch 001's
+status line from the original Submitted PR to
+`Upstream-Status: Backport` with the exact merged
+[FCEUmm commit](https://github.com/libretro/libretro-fceumm/commit/3db086eabeb6608706df330e7991b1bce8d25fba).
+The standalone `r19` source patch remains byte-identical.
 The recipe binds OpenWrt's quilt refresh target to that separately unpacked
 core, so the standard command refreshes the real nested patch stack:
 
@@ -63,9 +68,13 @@ make package/feeds/packages/nes-emulator/refresh V=s
 ```
 
 Run the command twice and require the second run to leave
-`patches-fceumm/` byte-identical. The savestate error-propagation patch is
-submitted as [FCEUmm PR #653](https://github.com/libretro/libretro-fceumm/pull/653).
-The ROM-buffer patch remains downstream-specific: generic frontends may leave
+`patches-fceumm/` byte-identical, including the exported Backport metadata.
+The FCEUmm pin intentionally remains unchanged for the immutable `v1.0.0`
+project source: newer core revisions raise `FCEU_VERSION_NUMERIC` from the
+frontend's fixed `9813` to `9900`, so updating only the core would make the
+state-format contract inconsistent. A future core update must accompany a new
+project release. The ROM-buffer patch remains downstream-specific: generic
+frontends may leave
 `data` and `size` invalid when FCEUmm advertises `need_fullpath=true`, whereas
 nesd deliberately supplies both the path and the exact buffer it hashed.
 
@@ -194,6 +203,8 @@ upgrade. An SDK compile alone does not replace router testing.
 - [ ] Confirm the FCEUmm secondary download is pinned by its full commit and
       SHA-256, both `patches-fceumm/` files apply with unchanged hunks, and a
       second `make package/feeds/packages/nes-emulator/refresh V=s` is clean.
+- [ ] Confirm exported patch 001 names merged FCEUmm commit `3db086eabeb6` as
+      a Backport and quilt refresh preserves that status header.
 - [ ] Confirm the native recipe starts at `PKG_RELEASE:=1`; leave both
       `PKG_VERSION` and `PKG_RELEASE` unset in the LuCI recipe so `luci.mk`
       uses its Git-derived package version.
