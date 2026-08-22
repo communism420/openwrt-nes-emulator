@@ -616,8 +616,9 @@ if run_installer > "$TEST_ROOT/relative-cache.out" 2> "$TEST_ROOT/relative-cache
 fi
 grep -Fq 'APK cache directory must be an absolute path' \
 	"$TEST_ROOT/relative-cache.err" || fail 'relative cache failure was not explained'
-[ ! -s "$LOG_ROOT/fetch.log" ] && [ ! -s "$LOG_ROOT/apk.log" ] ||
+if [ -s "$LOG_ROOT/fetch.log" ] || [ -s "$LOG_ROOT/apk.log" ]; then
 	fail 'relative cache path reached network or apk'
+fi
 
 mkdir "$TEST_ROOT/cache-target"
 ln -s "$TEST_ROOT/cache-target" "$TEST_ROOT/apk-cache-link"

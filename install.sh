@@ -326,8 +326,9 @@ say 'installing the verified emulator and LuCI packages in one transaction'
 # apk-tools v3 requires non-repository packages to be retained in a cache.
 [ ! -L "$APK_CACHE_DIR" ] || die "APK cache directory is a symlink: $APK_CACHE_DIR"
 mkdir -p "$APK_CACHE_DIR" || die "cannot create APK cache directory: $APK_CACHE_DIR"
-[ -d "$APK_CACHE_DIR" ] && [ ! -L "$APK_CACHE_DIR" ] ||
+if [ ! -d "$APK_CACHE_DIR" ] || [ -L "$APK_CACHE_DIR" ]; then
 	die "APK cache path is not a safe directory: $APK_CACHE_DIR"
+fi
 chmod 0755 "$APK_CACHE_DIR" || die "cannot secure APK cache directory: $APK_CACHE_DIR"
 apk --repositories-file /dev/null --no-network \
 	--cache-dir "$APK_CACHE_DIR" --cache-packages \
