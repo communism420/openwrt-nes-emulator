@@ -163,11 +163,27 @@ def check_clean_export(output: Path) -> None:
     )
     require("include ../../luci.mk" in luci_makefile, "LuCI export does not use luci.mk")
     require(
+        "PKG_VERSION:=" not in luci_makefile
+        and "PKG_RELEASE:=" not in luci_makefile
+        and "PKG_LICENSE_FILES:=" not in luci_makefile
+        and not (luci / "files/LICENSE-MIT").exists(),
+        "LuCI export retains ignored version/release or dead license metadata",
+    )
+    require(
         "# call BuildPackage - OpenWrt buildroot signature" in luci_makefile,
         "LuCI export lacks the package metadata scanner signature",
     )
     require("EXTRA_DEPENDS" not in luci_makefile, "standalone version lock leaked upstream")
     require("luci-app-nes-emulator" not in native_makefile, "native/LuCI cycle was introduced")
+    native_init = native / "files/nes-emulator.init"
+    native_config = native / "files/nes-emulator.config"
+    require(
+        native_init.read_bytes()
+        == (ROOT / "package/nes-emulator/files/nes-emulator.init").read_bytes()
+        and native_config.read_bytes()
+        == (ROOT / "package/nes-emulator/files/nes-emulator.config").read_bytes(),
+        "native export does not expose the exact reviewed init/UCI payload",
+    )
     translation_template = (
         luci / "po/templates/nes-emulator.pot"
     ).read_text(encoding="utf-8")
@@ -183,10 +199,25 @@ def check_clean_export(output: Path) -> None:
     require(
         "define Package/nes-emulator/postinst" in native_makefile
         and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native_makefile
-        and '[ -n "$${PKG_INSTROOT:-}" ] && exit 0' in native_makefile
-        and "/etc/init.d/nes-emulator preflight" in native_makefile,
-        "native post-install does not initialize secure runtime metadata",
+        and "$${PKG_INSTROOT" not in native_makefile
+        and "/etc/init.d/nes-emulator preflight" in native_makefile
+        and "\nexit 0\nendef" in native_makefile,
+        "native post-install is not image-root safe and best-effort",
     )
+    for forbidden_variable in (
+        "PROJECT_SOURCE_RELEASE",
+        "PROJECT_SOURCE_DATE_EPOCH",
+        "PROJECT_URL",
+        "FCEUMM_SHORT_COMMIT",
+        "NESD_SOURCE_DIR",
+        "NESD_FILES_DIR",
+        "SOURCE_DATE_EPOCH",
+        "> $(PKG_BUILD_DIR)/version.date",
+    ):
+        require(
+            forbidden_variable not in native_makefile,
+            f"native export retains redundant variable {forbidden_variable}",
+        )
     require(
         "PKG_ASLR_PIE_REGULAR:=1" in native_makefile,
         "native upstream daemon does not opt into OpenWrt PIE hardening",
@@ -197,6 +228,13 @@ def check_clean_export(output: Path) -> None:
         "100644  openwrt-packages/multimedia/nes-emulator/Makefile"
         in modes,
         "native recipe mode is not preserved",
+    )
+    require(
+        "100755  openwrt-packages/multimedia/nes-emulator/"
+        "files/nes-emulator.init" in modes
+        and "100644  openwrt-packages/multimedia/nes-emulator/"
+        "files/nes-emulator.config" in modes,
+        "native runtime file modes are not preserved",
     )
     require(
         "100755  openwrt-luci/applications/luci-app-nes-emulator/"

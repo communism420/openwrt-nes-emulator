@@ -15,6 +15,23 @@ fail() {
 	exit 1
 }
 
+# OpenWrt ships BusyBox wc/mv, not GNU du/mv. Exercise the exact byte-count
+# helper and keep unsupported options out of every runtime branch.
+eval "$(extract_function file_size_bytes)"
+size_fixture="$TMP/ROM image.nes"
+printf 'NES\032012345678901' >"$size_fixture"
+[ "$(file_size_bytes "$size_fixture")" = 16 ] ||
+	fail "apparent file size was not measured with wc -c"
+file_size_bytes "$TMP" >/dev/null 2>&1 &&
+	fail "directory was accepted as a regular byte-count source"
+if grep -Eq 'du[[:space:]]+-b|mv[[:space:]]+-fT' "$RPCD"; then
+	fail "GNU-only du or mv option remains in the rpcd bridge"
+fi
+grep -Fq -- "-exec wc -c '{}' ';'" "$RPCD" ||
+	fail "quota scan does not use the BusyBox-compatible wc applet"
+grep -Fq 'mv -f "$tmp" "$dest"' "$RPCD" ||
+	fail "ROM commit does not use the BusyBox-compatible mv form"
+
 # Exercise the exact metadata parser and validators on real regular files,
 # hardlinks, symlinks and directories.
 eval "$(extract_function read_metadata)"

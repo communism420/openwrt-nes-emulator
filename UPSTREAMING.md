@@ -164,7 +164,9 @@ upgrade. An SDK compile alone does not replace router testing.
 - [ ] Confirm the exported source URLs are tag-scoped and every declared hash
       matches the downloaded archive. Do not replace assets behind published
       tags.
-- [ ] Confirm each new upstream recipe starts at `PKG_RELEASE:=1`.
+- [ ] Confirm the native recipe starts at `PKG_RELEASE:=1`; leave both
+      `PKG_VERSION` and `PKG_RELEASE` unset in the LuCI recipe so `luci.mk`
+      uses its Git-derived package version.
 - [ ] Build with a current OpenWrt buildroot/SDK for more than one CPU family.
 - [ ] Confirm the packaged daemon is PIE and retains OpenWrt's standard ELF
       hardening.

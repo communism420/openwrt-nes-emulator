@@ -1344,7 +1344,11 @@ def check_security_regressions() -> None:
     require(
         "tr '[:upper:]' '[:lower:]'" not in rpcd
         and "tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'" in rpcd
-        and "-exec du -b '{}' ';'" in rpcd
+        and "du -b" not in rpcd
+        and "mv -fT" not in rpcd
+        and "file_size_bytes()" in rpcd
+        and "wc -c <\"$1\"" in rpcd
+        and "-exec wc -c '{}' ';'" in rpcd
         and "-mmin +30 -o -newer" in rpcd
         and 'touch -d "@$future"' in rpcd,
         "rpcd relies on incomplete BusyBox features or cannot expire staged uploads",
@@ -2187,9 +2191,22 @@ def check_security_regressions() -> None:
     )
     require(
         '[ "$size" -ge 32 ] && [ "$magic" = 554e4946 ]' in rpcd
-        and 'mv -fT "$tmp" "$dest"' in rpcd
-        and '[ -f "$dest" ] && [ ! -L "$dest" ]' in rpcd,
+        and 'mv -f "$tmp" "$dest"' in rpcd
+        and '[ -f "$dest" ] && [ ! -L "$dest" ]' in rpcd
+        and rpcd.index('[ -f "$dest" ] && [ ! -L "$dest" ]')
+        < rpcd.index('mv -f "$tmp" "$dest"'),
         "rpcd import accepts truncated UNIF files or unsafe destinations",
+    )
+    require(
+        "nesd is the final path-security boundary" in rpcd
+        and "canonical_path_allowed" in http_source
+        and "realpath(path, resolved)" in http_source
+        and "path_under_root(resolved, srv->rom_roots[i])" in http_source
+        and "O_RDONLY | O_CLOEXEC | O_NOFOLLOW" in http_source
+        and "rom_fd_valid(fd, canonical" in http_source
+        and "outside-root.nes" in integration
+        and "outside-link.nes" in integration,
+        "forwarded LuCI load paths are not demonstrably confined by nesd",
     )
     require(
         'dd if="$staged" of="$tmp" bs=4096 count=4097' in rpcd
@@ -2553,10 +2570,12 @@ def check_upstream_export_contract() -> None:
         set(luci_depends.group(1).split()) >= upstream_dependencies
         and "include ../../luci.mk" in luci
         and "# call BuildPackage - OpenWrt buildroot signature" in luci
-        and "PKG_RELEASE:=1" in luci
+        and "PKG_VERSION:=" not in luci
+        and "PKG_RELEASE:=" not in luci
+        and "PKG_LICENSE_FILES:=" not in luci
         and "EXTRA_DEPENDS" not in luci
         and "nes-emulator (=" not in luci,
-        "upstream LuCI recipe does not use canonical unversioned dependencies",
+        "upstream LuCI recipe does not use canonical Git-derived metadata",
     )
     require(
         luci_pot.startswith(
@@ -2571,7 +2590,7 @@ def check_upstream_export_contract() -> None:
         "PKG_RELEASE:=1" in native
         and "PKG_ASLR_PIE_REGULAR:=1" in native
         and re.search(r"^PKG_HASH:=[0-9a-f]{64}$", native, re.MULTILINE)
-        and "/releases/download/v$(PROJECT_SOURCE_RELEASE)" in native
+        and "/releases/download/v$(PKG_VERSION)-r19" in native
         and "/latest/" not in native
         and "luci-app-nes-emulator" not in native,
         "native upstream template is mutable, unverified, or creates a dependency cycle",
@@ -2579,11 +2598,28 @@ def check_upstream_export_contract() -> None:
     require(
         "define Package/nes-emulator/postinst" in native
         and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native
-        and '[ -n "$${PKG_INSTROOT:-}" ] && exit 0' in native
+        and "$${PKG_INSTROOT" not in native
         and "NESD_ON_DEMAND=1 NESD_SKIP_AUTOLOAD=1" in native
-        and "/etc/init.d/nes-emulator preflight" in native,
-        "native upstream post-install does not prepare secure runtime ownership",
+        and "/etc/init.d/nes-emulator preflight" in native
+        and "\nexit 0\nendef" in native
+        and "$(INSTALL_BIN) $(CURDIR)/files/nes-emulator.init" in native
+        and "$(INSTALL_CONF) $(CURDIR)/files/nes-emulator.config" in native,
+        "native upstream runtime payload or best-effort post-install is incomplete",
     )
+    for forbidden_variable in (
+        "PROJECT_SOURCE_RELEASE",
+        "PROJECT_SOURCE_DATE_EPOCH",
+        "PROJECT_URL",
+        "FCEUMM_SHORT_COMMIT",
+        "NESD_SOURCE_DIR",
+        "NESD_FILES_DIR",
+        "SOURCE_DATE_EPOCH",
+        "> $(PKG_BUILD_DIR)/version.date",
+    ):
+        require(
+            forbidden_variable not in native,
+            f"native upstream recipe retains redundant variable {forbidden_variable}",
+        )
 
     require(
         "EXTRA_DEPENDS:=nes-emulator (=$(PKG_VERSION)-r$(PKG_RELEASE))"
