@@ -38,6 +38,11 @@ NATIVE_FCEUMM_EXPORT_STATUS = (
     "[https://github.com/libretro/libretro-fceumm/commit/"
     "3db086eabeb6608706df330e7991b1bce8d25fba]"
 )
+NATIVE_STANDALONE_MIGRATION_DEFAULT = (
+    "\t# Internal marker: legacy configurations are migrated to router-safe "
+    "defaults once.\n"
+    "\toption safety_migration '4'\n"
+)
 LUCI_SOURCE = ROOT / "package" / "luci-app-nes-emulator"
 LUCI_MAKEFILE_TEMPLATE = LUCI_SOURCE / "Makefile.upstream"
 DEFAULT_OUTPUT = ROOT / "build" / "openwrt-upstream"
@@ -245,10 +250,6 @@ def validate_native_tree(
         "define Build/Compile",
         'FCEUMM_GIT_VERSION="$(PKG_FCEUMM_VERSION)"',
         "define Package/nes-emulator/install",
-        "define Package/nes-emulator/postinst",
-        '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0',
-        "/etc/init.d/nes-emulator preflight",
-        "exit 0",
         "$(INSTALL_BIN) $(CURDIR)/files/nes-emulator.init",
         "$(INSTALL_CONF) $(CURDIR)/files/nes-emulator.config",
         "$(eval $(call BuildPackage,nes-emulator))",
@@ -285,6 +286,8 @@ def validate_native_tree(
         "NESD_SOURCE_DIR",
         "NESD_FILES_DIR",
         "FCEUMM_DIR:=",
+        "define Package/nes-emulator/postinst",
+        "$${IPKG_INSTROOT",
         "$${PKG_INSTROOT",
         "SOURCE_DATE_EPOCH",
         "> $(PKG_BUILD_DIR)/version.date",
@@ -308,8 +311,10 @@ def validate_native_tree(
         "native upstream init script lacks its rc.common preflight entry point",
     )
     require(
-        read_text(default_config).startswith("config nes-emulator 'main'\n"),
-        "native upstream UCI defaults are malformed",
+        read_text(default_config).startswith("config nes-emulator 'main'\n")
+        and "safety_migration" not in read_text(default_config),
+        "native upstream UCI defaults are malformed or retain a standalone "
+        "migration marker",
     )
     patch_directory = root / "patches-fceumm"
     require(
@@ -463,8 +468,8 @@ def validate_templates() -> None:
     )
 
     # Validate both materialized payloads without modifying the standalone
-    # package recipes. Native runtime files are deliberately copied into the
-    # packages-feed tree so reviewers see the exact procd and UCI definitions.
+    # package recipes. Native runtime files are materialized in the packages
+    # tree so reviewers see the exact procd script and the official UCI defaults.
     with tempfile.TemporaryDirectory(prefix="openwrt-nes-luci-template-") as temporary:
         temporary_root = Path(temporary)
         native_destination = temporary_root / "nes-emulator"
@@ -527,8 +532,25 @@ def materialize_identity(
 
 def copy_native_tree(destination: Path, maintainer: str | None) -> None:
     copy_tree(NATIVE_TEMPLATE, destination)
-    for filename in ("nes-emulator.init", "nes-emulator.config"):
-        copy_regular_file(NATIVE_RUNTIME_FILES / filename, destination / "files" / filename)
+    copy_regular_file(
+        NATIVE_RUNTIME_FILES / "nes-emulator.init",
+        destination / "files/nes-emulator.init",
+    )
+    source_config = read_text(NATIVE_RUNTIME_FILES / "nes-emulator.config")
+    require(
+        source_config.count(NATIVE_STANDALONE_MIGRATION_DEFAULT) == 1,
+        "standalone UCI defaults have an unexpected migration marker",
+    )
+    destination_config = destination / "files/nes-emulator.config"
+    copy_regular_file(
+        NATIVE_RUNTIME_FILES / "nes-emulator.config",
+        destination_config,
+    )
+    destination_config.write_text(
+        source_config.replace(NATIVE_STANDALONE_MIGRATION_DEFAULT, "", 1),
+        encoding="utf-8",
+        newline="\n",
+    )
     for filename in NATIVE_FCEUMM_PATCH_NAMES:
         destination_patch = destination / "patches-fceumm" / filename
         copy_regular_file(

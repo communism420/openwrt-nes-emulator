@@ -97,12 +97,4 @@ define Package/nes-emulator/install
 		$(1)/etc/config/nes-emulator
 endef
 
-define Package/nes-emulator/postinst
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT:-}" ] && exit 0
-NESD_ON_DEMAND=1 NESD_SKIP_AUTOLOAD=1 \
-	/etc/init.d/nes-emulator preflight
-exit 0
-endef
-
 $(eval $(call BuildPackage,nes-emulator))

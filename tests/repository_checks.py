@@ -301,7 +301,9 @@ def check_installer() -> None:
         "static checks do not execute the installer contract",
     )
     require(
-        "shellcheck install.sh tests/install_contract.sh" in workflow,
+        "shellcheck install.sh tests/init_resource_contract.sh" in workflow
+        and "tests/install_contract.sh scripts/build-apks.sh scripts/check.sh"
+        in workflow,
         "CI does not run ShellCheck over install.sh",
     )
 
@@ -1299,6 +1301,8 @@ def check_security_regressions() -> None:
     http_header = read("package/nes-emulator/src/http.h")
     host_source = read("package/nes-emulator/src/host.c")
     integration = read("tests/integration.py")
+    init_resource_contract = read("tests/init_resource_contract.sh")
+    check_script = read("scripts/check.sh")
     overview = read(
         "package/luci-app-nes-emulator/htdocs/luci-static/resources/view/"
         "nes-emulator/overview.js"
@@ -1320,10 +1324,11 @@ def check_security_regressions() -> None:
             f"{label} does not securely store/migrate the authentication token",
         )
         require(
-            "TOKEN_LOCK_FILE=/var/lock/nes-emulator-token.lock" in source
+            "TOKEN_LOCK_FILE=/etc/nes-emulator/.auth.token.lock" in source
+            and 'command exec 8>"$TOKEN_LOCK_FILE" || return 1' in source
             and "flock -n 8" in source
             and '.lock/owner' not in source,
-            f"{label} authentication-token locking is not crash-safe",
+            f"{label} authentication-token locking is not protected and crash-safe",
         )
         require(
             not re.search(r"\bod\b", source)
@@ -1334,8 +1339,9 @@ def check_security_regressions() -> None:
     require(
         "repair_regular_metadata()" in init
         and '[ "$PATH_METADATA_NLINK" = 1 ]' in init
-        and 'repair_regular_metadata "$TOKEN_FILE" -rw-r-----' in init,
-        "init does not repair token metadata conditionally or reject hardlinks",
+        and 'repair_regular_metadata "$TOKEN_FILE" -rw-r-----' in init
+        and "AUTH_TOKEN" not in init,
+        "init token validation retains secret state or fails to reject unsafe metadata",
     )
     require(
         "validate_regular_metadata()" in rpcd
@@ -1488,6 +1494,14 @@ def check_security_regressions() -> None:
         and "flock -n 7" in rpcd
         and "validate_regular_metadata \"$START_LOCK_FILE\" -rw------- 0 0"
         in rpcd
+        and re.search(
+            r"rotate_token\(\) \{.*?acquire_start_lock.*?"
+            r"/etc/init\.d/nes-emulator running.*?acquire_token_lock.*?"
+            r"AUTH_TOKEN=.*?/etc/init\.d/nes-emulator running.*?"
+            r"release_start_lock.*?json_init",
+            rpcd,
+            re.DOTALL,
+        )
         and "procd_open_instance nesd" in init
         and 'EXTRA_COMMANDS="preflight"' in init
         and '[ "${NESD_PREFLIGHT:-0}" = 1 ] && return 0' in init,
@@ -1548,6 +1562,35 @@ def check_security_regressions() -> None:
     require(
         'readlink -f "$d"' in init,
         "data directory ancestry is not checked for symlink traversal",
+    )
+    require(
+        "directory_is_writable_by_nesd()" in init
+        and "directory_is_searchable_by_nesd()" in init
+        and "external_data_dir_is_usable_by_nesd()" in init
+        and 'NESD_GROUPS="$(id -G nesd 2>/dev/null)"' in init
+        and 'd?w[xs]??????)' in init
+        and 'd????w[xs]???)' in init
+        and 'd???????w[xt])' in init
+        and 'd??[xs]??????)' in init
+        and 'd?????[xs]???)' in init
+        and 'd????????[xt])' in init
+        and 'if ! external_data_dir_is_usable_by_nesd "$d"' in init
+        and "external data path is not writable and searchable by nesd" in init,
+        "pre-existing external data directories lack an explicit nesd write check",
+    )
+    require(
+        "owner write/search permissions were rejected" in init_resource_contract
+        and "matching read-only owner" in init_resource_contract
+        and "supplementary-group write/search permissions were rejected"
+        in init_resource_contract
+        and "matching read-only group" in init_resource_contract
+        and "a root-only ancestor was accepted" in init_resource_contract
+        and "searchable ancestors was rejected" in init_resource_contract
+        and "world-writable directory" in init_resource_contract
+        and "terminated the shell instead of returning an open failure"
+        in init_resource_contract
+        and "sh tests/init_resource_contract.sh" in check_script,
+        "init resource checks are not covered by an executable regression contract",
     )
     require(
         init.index('prepare_data_dir "$rom_dir"')
@@ -2640,15 +2683,12 @@ def check_upstream_export_contract() -> None:
         "native upstream template does not independently pin and patch FCEUmm",
     )
     require(
-        "define Package/nes-emulator/postinst" in native
-        and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native
+        "define Package/nes-emulator/postinst" not in native
+        and "$${IPKG_INSTROOT" not in native
         and "$${PKG_INSTROOT" not in native
-        and "NESD_ON_DEMAND=1 NESD_SKIP_AUTOLOAD=1" in native
-        and "/etc/init.d/nes-emulator preflight" in native
-        and "\nexit 0\nendef" in native
         and "$(INSTALL_BIN) $(CURDIR)/files/nes-emulator.init" in native
         and "$(INSTALL_CONF) $(CURDIR)/files/nes-emulator.config" in native,
-        "native upstream runtime payload or best-effort post-install is incomplete",
+        "native upstream runtime payload is incomplete or retains a redundant post-install",
     )
     for forbidden_variable in (
         "PROJECT_SOURCE_RELEASE",

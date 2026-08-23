@@ -26,8 +26,10 @@ sh -n tests/extra_rom_dirs_contract.sh
 sh -n tests/host_audio_contract.sh
 sh -n tests/http_audio_metadata_contract.sh
 sh -n tests/http_jpeg_worker_contract.sh
+sh -n tests/init_resource_contract.sh
 sh -n tests/install_contract.sh
 sh tests/extra_rom_dirs_contract.sh
+sh tests/init_resource_contract.sh
 sh tests/install_contract.sh
 sh tests/rpcd_permission_contract.sh
 sh tests/rpcd_transport_contract.sh

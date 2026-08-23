@@ -33,8 +33,8 @@ jobs:
           shellcheck --shell=sh --exclude=SC1091,SC3043,SC2015 \
             package/nes-emulator/files/nes-emulator.init \
             package/luci-app-nes-emulator/root/usr/libexec/rpcd/nes-emulator
-          shellcheck install.sh tests/install_contract.sh \
-            scripts/build-apks.sh scripts/check.sh
+          shellcheck install.sh tests/init_resource_contract.sh \
+            tests/install_contract.sh scripts/build-apks.sh scripts/check.sh
           sh scripts/check.sh
 
       - name: Fetch, verify and patch pinned FCEUmm

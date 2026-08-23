@@ -200,12 +200,25 @@ def check_clean_export(output: Path) -> None:
     )
     native_init = native / "files/nes-emulator.init"
     native_config = native / "files/nes-emulator.config"
+    source_config = (
+        ROOT / "package/nes-emulator/files/nes-emulator.config"
+    ).read_text(encoding="utf-8")
+    migration_default = (
+        "\t# Internal marker: legacy configurations are migrated to router-safe "
+        "defaults once.\n"
+        "\toption safety_migration '4'\n"
+    )
     require(
         native_init.read_bytes()
-        == (ROOT / "package/nes-emulator/files/nes-emulator.init").read_bytes()
-        and native_config.read_bytes()
-        == (ROOT / "package/nes-emulator/files/nes-emulator.config").read_bytes(),
-        "native export does not expose the exact reviewed init/UCI payload",
+        == (ROOT / "package/nes-emulator/files/nes-emulator.init").read_bytes(),
+        "native export does not expose the exact reviewed init payload",
+    )
+    require(
+        source_config.count(migration_default) == 1
+        and native_config.read_text(encoding="utf-8")
+        == source_config.replace(migration_default, "", 1)
+        and "safety_migration" not in native_config.read_text(encoding="utf-8"),
+        "native export did not remove only the standalone migration marker",
     )
     patch_statuses = {
         "001-propagate-savestate-parse-errors.patch": (
@@ -274,12 +287,10 @@ def check_clean_export(output: Path) -> None:
         "LuCI export lacks its generated upstream translation template",
     )
     require(
-        "define Package/nes-emulator/postinst" in native_makefile
-        and '[ -n "$${IPKG_INSTROOT:-}" ] && exit 0' in native_makefile
-        and "$${PKG_INSTROOT" not in native_makefile
-        and "/etc/init.d/nes-emulator preflight" in native_makefile
-        and "\nexit 0\nendef" in native_makefile,
-        "native post-install is not image-root safe and best-effort",
+        "define Package/nes-emulator/postinst" not in native_makefile
+        and "$${IPKG_INSTROOT" not in native_makefile
+        and "$${PKG_INSTROOT" not in native_makefile,
+        "native export retains a redundant custom post-install script",
     )
     for forbidden_variable in (
         "PROJECT_SOURCE_RELEASE",

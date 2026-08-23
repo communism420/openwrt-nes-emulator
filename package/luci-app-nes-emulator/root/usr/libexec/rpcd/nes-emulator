@@ -8,7 +8,7 @@
 CONFIG_FILE=/etc/config/nes-emulator
 TOKEN_FILE=/etc/nes-emulator/auth.token
 UPLOAD_DIR=/tmp/nes-emulator-upload
-TOKEN_LOCK_FILE=/var/lock/nes-emulator-token.lock
+TOKEN_LOCK_FILE=/etc/nes-emulator/.auth.token.lock
 UPLOAD_LOCK_FILE=/var/lock/nes-emulator-upload.lock
 START_LOCK_FILE="$UPLOAD_DIR/.start.lock"
 NESD_BIN=/usr/bin/nesd
@@ -196,7 +196,7 @@ acquire_token_lock() {
 	local attempts=0
 
 	[ "$TOKEN_LOCK_HELD" -eq 0 ] || return 0
-	exec 8>"$TOKEN_LOCK_FILE" || return 1
+	command exec 8>"$TOKEN_LOCK_FILE" || return 1
 	while ! flock -n 8 2>/dev/null; do
 		attempts=$((attempts + 1))
 		if [ "$attempts" -ge 10 ]; then
@@ -356,9 +356,14 @@ rotate_token() {
 		json_error "authentication token directory metadata is unsafe"
 		return
 	}
-	/etc/init.d/nes-emulator running >/dev/null 2>&1 9>&- &&
+	acquire_start_lock || {
+		json_error "another NES Emulator startup operation is still in progress; retry shortly"
+		return
+	}
+	/etc/init.d/nes-emulator running >/dev/null 2>&1 9>&- 7>&- &&
 		was_running=1
 	acquire_token_lock || {
+		release_start_lock
 		json_error "authentication token is busy"
 		return
 	}
@@ -367,27 +372,37 @@ rotate_token() {
 	   ! write_auth_token "$token" ||
 	   ! remove_legacy_token; then
 		release_token_lock
+		release_start_lock
 		json_error "cannot rotate authentication token"
 		return
 	fi
 	release_token_lock
 	AUTH_TOKEN="$token"
+	# A direct init/procd start does not use the RPC startup lock. If it passed
+	# token validation while rotation waited for the token lock, detect the
+	# newly running daemon here and restart it with the new token.
+	if [ "$was_running" -eq 0 ] &&
+	   /etc/init.d/nes-emulator running >/dev/null 2>&1 9>&- 7>&-; then
+		was_running=1
+	fi
 	if [ "$was_running" -eq 1 ]; then
 		enabled="$(uci -q get nes-emulator.main.enabled 2>/dev/null)"
 		case "$enabled" in
 		1|on|true|yes|enabled)
-			/etc/init.d/nes-emulator restart >/dev/null 2>&1 9>&-
+			/etc/init.d/nes-emulator restart >/dev/null 2>&1 9>&- 7>&-
 			;;
 		*)
 			NESD_ON_DEMAND=1 NESD_SKIP_AUTOLOAD=1 \
 				/etc/init.d/nes-emulator restart \
-				>/dev/null 2>&1 9>&-
+				>/dev/null 2>&1 9>&- 7>&-
 			;;
 		esac || {
+			release_start_lock
 			json_error "token changed, but nesd could not be restarted"
 			return
 		}
 	fi
+	release_start_lock
 	json_init
 	json_add_boolean ok 1
 	json_add_string token "$token"

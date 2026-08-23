@@ -11,10 +11,11 @@ PROG=/usr/bin/nesd
 NAME=nes-emulator
 CONFIG_FILE=/etc/config/nes-emulator
 TOKEN_FILE=/etc/nes-emulator/auth.token
-TOKEN_LOCK_FILE=/var/lock/nes-emulator-token.lock
+TOKEN_LOCK_FILE=/etc/nes-emulator/.auth.token.lock
 TOKEN_LOCK_HELD=0
 NESD_UID=
 NESD_GID=
+NESD_GROUPS=
 EXTRA_ROMS_INVALID=0
 PATH_METADATA_MODE=
 PATH_METADATA_NLINK=
@@ -101,6 +102,63 @@ repair_directory_metadata() {
 		[ "$PATH_METADATA_MODE" = drwxr-x--- ] &&
 		[ "$PATH_METADATA_UID" = "$expected_uid" ] &&
 		[ "$PATH_METADATA_GID" = "$expected_gid" ]
+}
+
+directory_is_writable_by_nesd() {
+	if [ "$PATH_METADATA_UID" = "$NESD_UID" ]; then
+		case "$PATH_METADATA_MODE" in
+			d?w[xs]??????) return 0 ;;
+		esac
+	elif case " $NESD_GROUPS " in
+		*" $PATH_METADATA_GID "*) true ;;
+		*) false ;;
+	esac; then
+		case "$PATH_METADATA_MODE" in
+			d????w[xs]???) return 0 ;;
+		esac
+	else
+		case "$PATH_METADATA_MODE" in
+			d???????w[xt]) return 0 ;;
+		esac
+	fi
+	return 1
+}
+
+directory_is_searchable_by_nesd() {
+	if [ "$PATH_METADATA_UID" = "$NESD_UID" ]; then
+		case "$PATH_METADATA_MODE" in
+			d??[xs]??????) return 0 ;;
+		esac
+	elif case " $NESD_GROUPS " in
+		*" $PATH_METADATA_GID "*) true ;;
+		*) false ;;
+	esac; then
+		case "$PATH_METADATA_MODE" in
+			d?????[xs]???) return 0 ;;
+		esac
+	else
+		case "$PATH_METADATA_MODE" in
+			d????????[xt]) return 0 ;;
+		esac
+	fi
+	return 1
+}
+
+external_data_dir_is_usable_by_nesd() {
+	local current="$1" leaf=1
+
+	while :; do
+		read_path_metadata "$current" || return 1
+		if [ "$leaf" -eq 1 ]; then
+			directory_is_writable_by_nesd || return 1
+			leaf=0
+		else
+			directory_is_searchable_by_nesd || return 1
+		fi
+		[ "$current" != "/" ] || return 0
+		current="${current%/*}"
+		[ -n "$current" ] || current=/
+	done
 }
 
 secure_config_file() {
@@ -218,6 +276,10 @@ prepare_data_dir() {
 				repair_directory_metadata "$d" "$NESD_UID" "$NESD_GID" \
 					nesd:nesd || return 1
 			fi
+			if ! external_data_dir_is_usable_by_nesd "$d"; then
+				log_error "external data path is not writable and searchable by nesd: $d"
+				return 1
+			fi
 			;;
 	esac
 	return 0
@@ -243,7 +305,6 @@ read_auth_token() {
 	lines="$(wc -l <"$TOKEN_FILE" 2>/dev/null | tr -d ' ')"
 	[ "$lines" = 1 ] &&
 		[ "$bytes" -eq $((${#token} + 1)) ] 2>/dev/null || return 1
-	AUTH_TOKEN="$token"
 	return 0
 }
 
@@ -280,7 +341,7 @@ acquire_token_lock() {
 	local attempts=0
 
 	[ "$TOKEN_LOCK_HELD" -eq 0 ] || return 0
-	exec 8>"$TOKEN_LOCK_FILE" || return 1
+	command exec 8>"$TOKEN_LOCK_FILE" || return 1
 	while ! flock -n 8 2>/dev/null; do
 		attempts=$((attempts + 1))
 		if [ "$attempts" -ge 10 ]; then
@@ -306,7 +367,7 @@ ensure_auth_token() {
 	uci -q get nes-emulator.main.auth_token >/dev/null 2>&1 &&
 		had_legacy=1
 	if read_auth_token; then
-		token="$AUTH_TOKEN"
+		:
 	elif token_is_valid "$legacy"; then
 		token="$legacy"
 		needs_write=1
@@ -337,7 +398,6 @@ ensure_auth_token() {
 		fi
 	fi
 
-	AUTH_TOKEN="$token"
 	release_token_lock
 	return 0
 }
@@ -348,14 +408,20 @@ start_service() {
 	local allowed_origin origin_authority
 	EXTRA_ROMS=""
 	EXTRA_ROMS_INVALID=0
-	AUTH_TOKEN=""
 	umask 027
 
 	NESD_UID="$(id -u nesd 2>/dev/null)" || NESD_UID=
 	NESD_GID="$(id -g nesd 2>/dev/null)" || NESD_GID=
+	NESD_GROUPS="$(id -G nesd 2>/dev/null)" || NESD_GROUPS=
 	case "$NESD_UID:$NESD_GID" in
 		:*|*:|*[!0-9:]*)
 			log_error "missing or invalid nesd service account"
+			return 10
+			;;
+	esac
+	case "$NESD_GROUPS" in
+		''|*[!0-9\ ]*)
+			log_error "missing or invalid nesd service groups"
 			return 10
 			;;
 	esac

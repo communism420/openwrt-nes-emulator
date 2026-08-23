@@ -35,6 +35,12 @@ python3 scripts/export-openwrt-upstream.py \
   --validate-only build/openwrt-upstream
 ```
 
+The standalone defaults retain `safety_migration=4` because the standalone
+post-install script consumes that marker when upgrading older GitHub APKs. The
+official package is a new feed entry and has no such migration script, so the
+exporter removes exactly the marker's comment and option from its reviewed UCI
+defaults while leaving every functional setting unchanged.
+
 Copy only these generated directories into clean forks of the two official
 repositories:
 
