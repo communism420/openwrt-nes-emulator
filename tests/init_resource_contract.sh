@@ -213,14 +213,14 @@ for source in "$INIT" "$RPCD"; do
 		: >"$TOKEN_LOCK_FILE"
 		LOCK_FLOCK_CALLS=0
 		LOCK_SLEEP_CALLS=0
-		# Invoked by the extracted lock function.
-		# shellcheck disable=SC2329
+		# Invoked indirectly by the extracted lock function evaluated above.
+		# shellcheck disable=SC2317,SC2329
 		flock() {
 			LOCK_FLOCK_CALLS=$((LOCK_FLOCK_CALLS + 1))
 			return 1
 		}
-		# Invoked by the extracted lock function.
-		# shellcheck disable=SC2329
+		# Invoked indirectly by the extracted lock function evaluated above.
+		# shellcheck disable=SC2317,SC2329
 		sleep() {
 			LOCK_SLEEP_CALLS=$((LOCK_SLEEP_CALLS + 1))
 		}
