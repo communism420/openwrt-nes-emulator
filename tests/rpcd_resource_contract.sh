@@ -74,6 +74,213 @@ case "$validators" in
 	*chown*|*chmod*) fail "read-only validators mutate metadata" ;;
 esac
 
+# All runtime locks belong to one root-only tmpfs directory. Exercise the exact
+# safe-creation helpers with the current test user substituted for root when
+# this contract runs on an unprivileged CI worker.
+grep -Fxq 'LOCK_DIR=/var/run/nes-emulator' "$RPCD" ||
+	fail "runtime locks do not use the protected /var/run directory"
+grep -Fxq 'TOKEN_LOCK_FILE="$LOCK_DIR/auth.token.lock"' "$RPCD" ||
+	fail "token lock is outside the protected runtime directory"
+grep -Fxq 'UPLOAD_LOCK_FILE="$LOCK_DIR/upload.lock"' "$RPCD" ||
+	fail "upload lock is outside the protected runtime directory"
+grep -Fxq 'START_LOCK_FILE="$LOCK_DIR/start.lock"' "$RPCD" ||
+	fail "startup lock is outside the protected runtime directory"
+if grep -Eq '^(TOKEN|UPLOAD|START)_LOCK_FILE=(/etc|/var/lock)' "$RPCD"; then
+	fail "a runtime lock remains on flash or in the world-writable lock directory"
+fi
+
+lock_directory_source="$(extract_function prepare_lock_directory)"
+lock_file_source="$(extract_function prepare_lock_file)"
+[ "$(printf '%s\n' "$lock_directory_source" |
+	grep -Fc 'validate_directory_metadata "$LOCK_DIR" drwx------ 0 0')" -ge 2 ] ||
+	fail "lock directory is not validated after safe creation"
+case "$lock_directory_source" in
+	*'umask 077'*'mkdir "$LOCK_DIR"'*) ;;
+	*) fail "lock directory is not created with private permissions" ;;
+esac
+[ "$(printf '%s\n' "$lock_file_source" |
+	grep -Fc 'validate_regular_metadata "$path" -rw------- 0 0')" -ge 3 ] ||
+	fail "lock file is not validated before and after safe creation"
+case "$lock_file_source" in
+	*'set -C'*'umask 077'*': >"$path"'*) ;;
+	*) fail "lock file is not created atomically with private permissions" ;;
+esac
+
+test_lock_source="$lock_directory_source
+$lock_file_source"
+if [ "$uid" != 0 ] || [ "$gid" != 0 ]; then
+	test_lock_source="$(printf '%s\n' "$test_lock_source" |
+		sed "s/drwx------ 0 0/drwx------ $uid $gid/g;
+		     s/-rw------- 0 0/-rw------- $uid $gid/g")"
+fi
+eval "$test_lock_source"
+LOCK_DIR="$TMP/locks"
+TOKEN_LOCK_FILE="$LOCK_DIR/auth.token.lock"
+UPLOAD_LOCK_FILE="$LOCK_DIR/upload.lock"
+START_LOCK_FILE="$LOCK_DIR/start.lock"
+
+prepare_lock_directory || fail "protected lock directory was not created"
+validate_directory_metadata "$LOCK_DIR" drwx------ "$uid" "$gid" ||
+	fail "protected lock directory has unsafe metadata"
+for lock_file in "$TOKEN_LOCK_FILE" "$UPLOAD_LOCK_FILE" "$START_LOCK_FILE"; do
+	prepare_lock_file "$lock_file" || fail "safe lock file was not created"
+	validate_regular_metadata "$lock_file" -rw------- "$uid" "$gid" ||
+		fail "created lock file has unsafe metadata"
+	prepare_lock_file "$lock_file" || fail "safe existing lock file was rejected"
+done
+
+chmod 0755 "$LOCK_DIR"
+prepare_lock_directory &&
+	fail "world-searchable lock directory was accepted"
+chmod 0700 "$LOCK_DIR"
+prepare_lock_directory || fail "safe lock directory was not restored"
+
+real_lock_dir="$TMP/real-locks"
+mv "$LOCK_DIR" "$real_lock_dir"
+ln -s "$real_lock_dir" "$LOCK_DIR"
+prepare_lock_directory &&
+	fail "lock-directory symlink was accepted"
+rm -f "$LOCK_DIR"
+mv "$real_lock_dir" "$LOCK_DIR"
+prepare_lock_directory || fail "safe lock directory was not restored after symlink test"
+
+chmod 0644 "$TOKEN_LOCK_FILE"
+prepare_lock_file "$TOKEN_LOCK_FILE" &&
+	fail "world-readable lock file was accepted"
+rm -f "$TOKEN_LOCK_FILE"
+ln -s "$TMP/regular" "$TOKEN_LOCK_FILE"
+prepare_lock_file "$TOKEN_LOCK_FILE" &&
+	fail "lock-file symlink was accepted"
+rm -f "$TOKEN_LOCK_FILE"
+prepare_lock_file "$TOKEN_LOCK_FILE" || fail "safe token lock was not restored"
+ln "$TOKEN_LOCK_FILE" "$TMP/token-lock-hardlink"
+prepare_lock_file "$TOKEN_LOCK_FILE" &&
+	fail "multiply-linked lock file was accepted"
+rm -f "$TMP/token-lock-hardlink" "$TOKEN_LOCK_FILE"
+
+# Opening any lock must be catchable under BusyBox ash and followed by another
+# metadata validation. A bare special-builtin `exec` would terminate each
+# subshell before it can create its marker.
+token_lock_source="$(extract_function acquire_token_lock)"
+upload_lock_source="$(extract_function acquire_upload_lock)"
+start_lock_source="$(extract_function acquire_start_lock)"
+case "$token_lock_source" in
+	*'prepare_lock_file "$TOKEN_LOCK_FILE"'*'command exec 8<>"$TOKEN_LOCK_FILE"'*'validate_regular_metadata "$TOKEN_LOCK_FILE" -rw------- 0 0'*) ;;
+	*) fail "token lock lacks safe preparation, catchable open, or post-open validation" ;;
+esac
+case "$upload_lock_source" in
+	*'prepare_lock_file "$UPLOAD_LOCK_FILE"'*'command exec 9<>"$UPLOAD_LOCK_FILE"'*'validate_regular_metadata "$UPLOAD_LOCK_FILE" -rw------- 0 0'*) ;;
+	*) fail "upload lock lacks safe preparation, catchable open, or post-open validation" ;;
+esac
+case "$start_lock_source" in
+	*'prepare_lock_file "$START_LOCK_FILE"'*'command exec 7<>"$START_LOCK_FILE"'*'validate_regular_metadata "$START_LOCK_FILE" -rw------- 0 0'*) ;;
+	*) fail "startup lock lacks safe preparation, catchable open, or post-open validation" ;;
+esac
+
+token_open_caught="$TMP/token-open-caught"
+(
+	eval "$token_lock_source"
+	TOKEN_LOCK_HELD=0
+	TOKEN_LOCK_MAX_ATTEMPTS=1
+	TOKEN_LOCK_FILE="$TMP/missing/token.lock"
+	prepare_lock_file() { return 0; }
+	validate_regular_metadata() { return 0; }
+	acquire_token_lock && exit 1
+	: >"$token_open_caught"
+) >/dev/null 2>&1 || :
+[ -e "$token_open_caught" ] ||
+	fail "token-lock open failure terminated the shell"
+
+upload_open_caught="$TMP/upload-open-caught"
+(
+	eval "$upload_lock_source"
+	UPLOAD_LOCK_HELD=0
+	UPLOAD_LOCK_MAX_ATTEMPTS=1
+	UPLOAD_LOCK_FILE="$TMP/missing/upload.lock"
+	prepare_lock_file() { return 0; }
+	validate_regular_metadata() { return 0; }
+	acquire_upload_lock && exit 1
+	: >"$upload_open_caught"
+) >/dev/null 2>&1 || :
+[ -e "$upload_open_caught" ] ||
+	fail "upload-lock open failure terminated the shell"
+
+start_open_caught="$TMP/start-open-caught"
+(
+	eval "$start_lock_source"
+	START_LOCK_HELD=0
+	START_LOCK_MAX_ATTEMPTS=1
+	START_LOCK_FILE="$TMP/missing/start.lock"
+	prepare_lock_file() { return 0; }
+	validate_regular_metadata() { return 0; }
+	acquire_start_lock && exit 1
+	: >"$start_open_caught"
+) >/dev/null 2>&1 || :
+[ -e "$start_open_caught" ] ||
+	fail "startup-lock open failure terminated the shell"
+
+# A rotate request selects a shorter token-lock budget before the global token
+# check, then encounters that lock once there and once inside rotate_token().
+# Ordinary requests must retain the less aggressive default budget.
+token_lock_attempts="$(sed -n 's/^TOKEN_LOCK_MAX_ATTEMPTS=//p' "$RPCD")"
+rotate_token_attempts="$(sed -n 's/^ROTATE_TOKEN_LOCK_MAX_ATTEMPTS=//p' "$RPCD")"
+rotate_start_attempts="$(sed -n 's/^ROTATE_START_LOCK_MAX_ATTEMPTS=//p' "$RPCD")"
+for lock_attempts in \
+	"$token_lock_attempts" \
+	"$rotate_token_attempts" \
+	"$rotate_start_attempts"; do
+	case "$lock_attempts" in
+	''|*[!0-9]*|0) fail "token lock budget is missing or invalid" ;;
+	esac
+done
+[ "$token_lock_attempts" -eq 10 ] ||
+	fail "ordinary requests lost the standard token-lock budget"
+[ "$rotate_token_attempts" -lt "$token_lock_attempts" ] ||
+	fail "token rotation does not use a shorter token-lock budget"
+
+token_budget_selection="$(
+	sed -n '/^case "$1:$2" in$/,/^esac$/p' "$RPCD"
+)"
+case "$token_budget_selection" in
+	*'call:rotate_token) TOKEN_LOCK_MAX_ATTEMPTS="$ROTATE_TOKEN_LOCK_MAX_ATTEMPTS" ;;'*) ;;
+	*) fail "rotation-specific token-lock budget selection is missing" ;;
+esac
+pre_dispatch_source="$(sed -n '/^load_config$/,/^ensure_auth_token || {/p' "$RPCD")"
+case "$pre_dispatch_source" in
+	*'call:rotate_token) TOKEN_LOCK_MAX_ATTEMPTS="$ROTATE_TOKEN_LOCK_MAX_ATTEMPTS" ;;'*'ensure_auth_token || {'*) ;;
+	*) fail "rotation token-lock budget is not selected before token initialization" ;;
+esac
+
+(
+	TOKEN_LOCK_MAX_ATTEMPTS="$token_lock_attempts"
+	ROTATE_TOKEN_LOCK_MAX_ATTEMPTS="$rotate_token_attempts"
+	set -- call rotate_token
+	eval "$token_budget_selection"
+	[ "$TOKEN_LOCK_MAX_ATTEMPTS" -eq "$rotate_token_attempts" ]
+) || fail "call:rotate_token did not select its per-request token-lock budget"
+(
+	TOKEN_LOCK_MAX_ATTEMPTS="$token_lock_attempts"
+	ROTATE_TOKEN_LOCK_MAX_ATTEMPTS="$rotate_token_attempts"
+	set -- call status
+	eval "$token_budget_selection"
+	[ "$TOKEN_LOCK_MAX_ATTEMPTS" -eq "$token_lock_attempts" ]
+) || fail "ordinary call unexpectedly inherited the rotation token-lock budget"
+(
+	TOKEN_LOCK_MAX_ATTEMPTS="$token_lock_attempts"
+	ROTATE_TOKEN_LOCK_MAX_ATTEMPTS="$rotate_token_attempts"
+	set -- list unused
+	eval "$token_budget_selection"
+	[ "$TOKEN_LOCK_MAX_ATTEMPTS" -eq "$token_lock_attempts" ]
+) || fail "rpcd method listing unexpectedly inherited the rotation budget"
+
+# Keep both rotation token waits plus its startup-lock wait comfortably inside
+# LuCI's 20-second default RPC timeout.
+combined_rotate_sleeps=$((
+	(rotate_token_attempts - 1) * 2 + rotate_start_attempts - 1
+))
+[ "$combined_rotate_sleeps" -eq 7 ] ||
+	fail "rotation lock waits no longer preserve the reviewed seven-second budget"
+
 # `ensure_auth_token` may create a genuinely absent token, but must fail closed
 # for every existing entry whose content or metadata was rejected.
 ensure_source="$(extract_function ensure_auth_token)"
@@ -136,11 +343,13 @@ rotate_source="$(
 		sed 's#/etc/init.d/nes-emulator#service_cmd#g'
 )"
 eval "$rotate_source"
+ROTATE_START_LOCK_MAX_ATTEMPTS="$rotate_start_attempts"
 SERVICE_LOG="$TMP/service.log"
 SERVICE_RUNNING=0
 TEST_ENABLED=0
 START_LOCK_ACQUIRES=0
 START_LOCK_RELEASES=0
+START_LOCK_BUDGET=
 RUNNING_CHECKS=0
 START_DURING_ROTATION=0
 
@@ -152,6 +361,8 @@ json_dump_without_upload_fd() { :; }
 write_auth_token() { return 0; }
 remove_legacy_token() { return 0; }
 acquire_start_lock() {
+	[ "$#" -eq 1 ] || fail "rotation did not supply a bounded startup-lock wait"
+	START_LOCK_BUDGET="$1"
 	START_LOCK_ACQUIRES=$((START_LOCK_ACQUIRES + 1))
 	return 0
 }
@@ -188,6 +399,8 @@ SERVICE_RUNNING=0
 TEST_ENABLED=0
 RUNNING_CHECKS=0
 rotate_token || fail "token rotation failed while daemon was stopped"
+[ "$START_LOCK_BUDGET" = "$ROTATE_START_LOCK_MAX_ATTEMPTS" ] ||
+	fail "rotation did not use its dedicated startup-lock budget"
 [ ! -s "$SERVICE_LOG" ] ||
 	fail "stopped daemon was started by token rotation"
 [ "$START_LOCK_ACQUIRES" -eq "$START_LOCK_RELEASES" ] ||

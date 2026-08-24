@@ -1324,9 +1324,16 @@ def check_security_regressions() -> None:
             f"{label} does not securely store/migrate the authentication token",
         )
         require(
-            "TOKEN_LOCK_FILE=/etc/nes-emulator/.auth.token.lock" in source
-            and 'command exec 8>"$TOKEN_LOCK_FILE" || return 1' in source
+            "LOCK_DIR=/var/run/nes-emulator" in source
+            and 'TOKEN_LOCK_FILE="$LOCK_DIR/auth.token.lock"' in source
+            and "prepare_lock_directory()" in source
+            and "set -C" in source
+            and 'command exec 8<>"$TOKEN_LOCK_FILE" || return 1' in source
             and "flock -n 8" in source
+            and "-rw-------" in source
+            and "drwx------" in source
+            and "/etc/nes-emulator/.auth.token.lock" not in source
+            and "TOKEN_LOCK_FILE=/var/lock/" not in source
             and '.lock/owner' not in source,
             f"{label} authentication-token locking is not protected and crash-safe",
         )
@@ -1488,12 +1495,21 @@ def check_security_regressions() -> None:
         "RPC startup still confuses missing transport, slow start, and daemon exit",
     )
     require(
-        "START_LOCK_FILE=\"$UPLOAD_DIR/.start.lock\"" in rpcd
+        'START_LOCK_FILE="$LOCK_DIR/start.lock"' in rpcd
         and "acquire_start_lock()" in rpcd
         and "release_start_lock()" in rpcd
+        and 'prepare_lock_file "$START_LOCK_FILE"' in rpcd
+        and 'command exec 7<>"$START_LOCK_FILE" || return 1' in rpcd
         and "flock -n 7" in rpcd
         and "validate_regular_metadata \"$START_LOCK_FILE\" -rw------- 0 0"
         in rpcd
+        and 'acquire_start_lock "$ROTATE_START_LOCK_MAX_ATTEMPTS"' in rpcd
+        and "TOKEN_LOCK_MAX_ATTEMPTS=10" in rpcd
+        and "ROTATE_TOKEN_LOCK_MAX_ATTEMPTS=3" in rpcd
+        and "ROTATE_START_LOCK_MAX_ATTEMPTS=4" in rpcd
+        and 'call:rotate_token) TOKEN_LOCK_MAX_ATTEMPTS="$ROTATE_TOKEN_LOCK_MAX_ATTEMPTS"'
+        in rpcd
+        and "seven one-second sleeps" in rpcd
         and re.search(
             r"rotate_token\(\) \{.*?acquire_start_lock.*?"
             r"/etc/init\.d/nes-emulator running.*?acquire_token_lock.*?"
@@ -1540,7 +1556,8 @@ def check_security_regressions() -> None:
         and "withTimeout(callRoms(), 15000)" in overview
         and "const result = await callImport(" in overview
         and not re.search(r"withTimeout\s*\(\s*callImport\s*\(", overview)
-        and 'if [ "$attempts" -ge 3 ]; then' in rpcd,
+        and "UPLOAD_LOCK_MAX_ATTEMPTS=3" in rpcd
+        and 'if [ "$attempts" -ge "$UPLOAD_LOCK_MAX_ATTEMPTS" ]; then' in rpcd,
         "LuCI timeouts can abandon non-cancellable actions or upload reservations",
     )
     play_view = read(
@@ -1565,6 +1582,7 @@ def check_security_regressions() -> None:
     )
     require(
         "directory_is_writable_by_nesd()" in init
+        and "directory_is_readable_by_nesd()" in init
         and "directory_is_searchable_by_nesd()" in init
         and "external_data_dir_is_usable_by_nesd()" in init
         and 'NESD_GROUPS="$(id -G nesd 2>/dev/null)"' in init
@@ -1574,9 +1592,15 @@ def check_security_regressions() -> None:
         and 'd??[xs]??????)' in init
         and 'd?????[xs]???)' in init
         and 'd????????[xt])' in init
-        and 'if ! external_data_dir_is_usable_by_nesd "$d"' in init
-        and "external data path is not writable and searchable by nesd" in init,
-        "pre-existing external data directories lack an explicit nesd write check",
+        and 'dr?[xs]??????)' in init
+        and 'd???r?[xs]???)' in init
+        and 'd??????r?[xt])' in init
+        and 'if ! external_data_dir_is_usable_by_nesd "$d" "$required"' in init
+        and 'prepare_data_dir "$system_dir" read' in init
+        and "external data path lacks $access access for nesd" in init
+        and "uid $NESD_UID, primary gid $NESD_GID, groups $NESD_GROUPS" in init
+        and "mount uid/gid/dmask" in init,
+        "external data directories lack operation-specific nesd access checks",
     )
     require(
         "owner write/search permissions were rejected" in init_resource_contract
@@ -2189,7 +2213,12 @@ def check_security_regressions() -> None:
         and "reserve_upload_locked" in rpcd
         and "discard_upload_locked" in rpcd
         and "import_rom_locked" in rpcd
-        and "UPLOAD_LOCK_FILE=/var/lock/nes-emulator-upload.lock" in rpcd
+        and 'UPLOAD_LOCK_FILE="$LOCK_DIR/upload.lock"' in rpcd
+        and 'prepare_lock_file "$UPLOAD_LOCK_FILE"' in rpcd
+        and 'command exec 9<>"$UPLOAD_LOCK_FILE" || return 1' in rpcd
+        and 'validate_regular_metadata "$UPLOAD_LOCK_FILE" -rw------- 0 0'
+        in rpcd
+        and "/var/lock/nes-emulator-upload.lock" not in rpcd
         and "flock -n 9" in rpcd
         and 'storage_is_available "$dest" 0' in rpcd
         and "if ! sync 9>&-; then" in rpcd,

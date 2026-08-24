@@ -8,9 +8,15 @@
 CONFIG_FILE=/etc/config/nes-emulator
 TOKEN_FILE=/etc/nes-emulator/auth.token
 UPLOAD_DIR=/tmp/nes-emulator-upload
-TOKEN_LOCK_FILE=/etc/nes-emulator/.auth.token.lock
-UPLOAD_LOCK_FILE=/var/lock/nes-emulator-upload.lock
-START_LOCK_FILE="$UPLOAD_DIR/.start.lock"
+LOCK_DIR=/var/run/nes-emulator
+TOKEN_LOCK_FILE="$LOCK_DIR/auth.token.lock"
+UPLOAD_LOCK_FILE="$LOCK_DIR/upload.lock"
+START_LOCK_FILE="$LOCK_DIR/start.lock"
+TOKEN_LOCK_MAX_ATTEMPTS=10
+UPLOAD_LOCK_MAX_ATTEMPTS=3
+START_LOCK_MAX_ATTEMPTS=20
+ROTATE_TOKEN_LOCK_MAX_ATTEMPTS=3
+ROTATE_START_LOCK_MAX_ATTEMPTS=4
 NESD_BIN=/usr/bin/nesd
 MAX_ROM_SIZE=16777216
 ROM_QUOTA_SIZE=134217728
@@ -92,6 +98,40 @@ validate_directory_metadata() {
 		[ "$META_MODE" = "$expected_mode" ] &&
 		[ "$META_UID" = "$expected_uid" ] &&
 		[ "$META_GID" = "$expected_gid" ]
+}
+
+prepare_lock_directory() {
+	if [ -e "$LOCK_DIR" ] || [ -L "$LOCK_DIR" ]; then
+		validate_directory_metadata "$LOCK_DIR" drwx------ 0 0
+		return
+	fi
+	(
+		exec 7>&- 8>&- 9>&-
+		umask 077
+		mkdir "$LOCK_DIR"
+	) 2>/dev/null ||
+		validate_directory_metadata "$LOCK_DIR" drwx------ 0 0 ||
+		return 1
+	validate_directory_metadata "$LOCK_DIR" drwx------ 0 0
+}
+
+prepare_lock_file() {
+	local path="$1"
+
+	prepare_lock_directory || return 1
+	if [ -e "$path" ] || [ -L "$path" ]; then
+		validate_regular_metadata "$path" -rw------- 0 0
+		return
+	fi
+	(
+		exec 7>&- 8>&- 9>&-
+		set -C
+		umask 077
+		: >"$path"
+	) 2>/dev/null ||
+		validate_regular_metadata "$path" -rw------- 0 0 ||
+		return 1
+	validate_regular_metadata "$path" -rw------- 0 0
 }
 
 load_service_nesd_gid() {
@@ -196,10 +236,15 @@ acquire_token_lock() {
 	local attempts=0
 
 	[ "$TOKEN_LOCK_HELD" -eq 0 ] || return 0
-	command exec 8>"$TOKEN_LOCK_FILE" || return 1
+	prepare_lock_file "$TOKEN_LOCK_FILE" || return 1
+	command exec 8<>"$TOKEN_LOCK_FILE" || return 1
+	validate_regular_metadata "$TOKEN_LOCK_FILE" -rw------- 0 0 || {
+		exec 8>&-
+		return 1
+	}
 	while ! flock -n 8 2>/dev/null; do
 		attempts=$((attempts + 1))
-		if [ "$attempts" -ge 10 ]; then
+		if [ "$attempts" -ge "$TOKEN_LOCK_MAX_ATTEMPTS" ]; then
 			exec 8>&-
 			return 1
 		fi
@@ -249,10 +294,15 @@ acquire_upload_lock() {
 	local attempts=0
 
 	[ "$UPLOAD_LOCK_HELD" -eq 0 ] || return 0
-	exec 9>"$UPLOAD_LOCK_FILE" || return 1
+	prepare_lock_file "$UPLOAD_LOCK_FILE" || return 1
+	command exec 9<>"$UPLOAD_LOCK_FILE" || return 1
+	validate_regular_metadata "$UPLOAD_LOCK_FILE" -rw------- 0 0 || {
+		exec 9>&-
+		return 1
+	}
 	while ! flock -n 9 2>/dev/null; do
 		attempts=$((attempts + 1))
-		if [ "$attempts" -ge 3 ]; then
+		if [ "$attempts" -ge "$UPLOAD_LOCK_MAX_ATTEMPTS" ]; then
 			exec 9>&-
 			return 1
 		fi
@@ -264,35 +314,20 @@ acquire_upload_lock() {
 	return 0
 }
 
-prepare_start_lock_file() {
-	if [ -e "$START_LOCK_FILE" ] || [ -L "$START_LOCK_FILE" ]; then
-		validate_regular_metadata "$START_LOCK_FILE" -rw------- 0 0
-		return
-	fi
-	(
-		exec 7>&- 9>&-
-		set -C
-		umask 077
-		: >"$START_LOCK_FILE"
-	) 2>/dev/null ||
-		validate_regular_metadata "$START_LOCK_FILE" -rw------- 0 0 ||
-		return 1
-	validate_regular_metadata "$START_LOCK_FILE" -rw------- 0 0
-}
-
 acquire_start_lock() {
-	local attempts=0
+	local attempts=0 max_attempts="${1:-$START_LOCK_MAX_ATTEMPTS}"
 
 	[ "$START_LOCK_HELD" -eq 0 ] || return 0
-	prepare_start_lock_file || return 1
-	exec 7<>"$START_LOCK_FILE" || return 1
+	case "$max_attempts" in ''|*[!0-9]*|0) return 1 ;; esac
+	prepare_lock_file "$START_LOCK_FILE" || return 1
+	command exec 7<>"$START_LOCK_FILE" || return 1
 	validate_regular_metadata "$START_LOCK_FILE" -rw------- 0 0 || {
 		exec 7>&-
 		return 1
 	}
 	while ! flock -n 7 2>/dev/null; do
 		attempts=$((attempts + 1))
-		if [ "$attempts" -ge 20 ]; then
+		if [ "$attempts" -ge "$max_attempts" ]; then
 			exec 7>&-
 			return 1
 		fi
@@ -356,7 +391,9 @@ rotate_token() {
 		json_error "authentication token directory metadata is unsafe"
 		return
 	}
-	acquire_start_lock || {
+	# Including the pre-dispatch token check, these budgets allow at most
+	# seven one-second sleeps, comfortably below LuCI's 20-second RPC timeout.
+	acquire_start_lock "$ROTATE_START_LOCK_MAX_ATTEMPTS" || {
 		json_error "another NES Emulator startup operation is still in progress; retry shortly"
 		return
 	}
@@ -1410,6 +1447,11 @@ validate_config_file || {
 }
 load_config
 select_http_client || :
+# Token rotation takes the same lock once here and once while replacing the
+# token. Use its shorter per-request budget without penalizing ordinary calls.
+case "$1:$2" in
+	call:rotate_token) TOKEN_LOCK_MAX_ATTEMPTS="$ROTATE_TOKEN_LOCK_MAX_ATTEMPTS" ;;
+esac
 ensure_auth_token || {
 	case "$1" in call) json_error "cannot initialize authentication token" ;; esac
 	exit 1
