@@ -126,12 +126,25 @@ external_data_dir_is_usable_by_nesd /mount/data invalid &&
 # be accepted when its effective access is correct, and rejected actionably
 # when that final access check fails.
 eval "$(extract_function prepare_data_dir "$INIT")"
+TEST_EXTERNAL_ACCESS=0
+# Invoked indirectly by the extracted directory function evaluated above.
+# shellcheck disable=SC2317
+valid_data_dir() { return 0; }
+# Invoked indirectly by the extracted directory function evaluated above.
+# shellcheck disable=SC2317
+repair_directory_metadata() { return 1; }
+# Invoked indirectly by the extracted directory function evaluated above.
+# shellcheck disable=SC2317
+external_data_dir_is_usable_by_nesd() {
+	[ "$TEST_EXTERNAL_ACCESS" -eq 1 ]
+}
+# Invoked indirectly by the extracted directory function evaluated above.
+# shellcheck disable=SC2317
+log_error() { printf '%s\n' "$*"; }
+
 vfat_log="$TMP/vfat.log"
 (
-	valid_data_dir() { return 0; }
-	repair_directory_metadata() { return 1; }
-	external_data_dir_is_usable_by_nesd() { return 0; }
-	log_error() { printf '%s\n' "$*"; }
+	TEST_EXTERNAL_ACCESS=1
 	prepare_data_dir "$TMP/vfat/roms" write
 ) >"$vfat_log" 2>&1 ||
 	fail "metadata-only failure rejected an effectively writable external directory"
@@ -142,10 +155,7 @@ grep -Fq "checking effective access instead" "$vfat_log" ||
 
 denied_log="$TMP/denied.log"
 if (
-	valid_data_dir() { return 0; }
-	repair_directory_metadata() { return 1; }
-	external_data_dir_is_usable_by_nesd() { return 1; }
-	log_error() { printf '%s\n' "$*"; }
+	TEST_EXTERNAL_ACCESS=0
 	prepare_data_dir "$TMP/denied/roms" write
 ) >"$denied_log" 2>&1; then
 	fail "an effectively unwritable external directory was accepted"
