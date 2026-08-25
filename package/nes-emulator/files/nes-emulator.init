@@ -28,6 +28,10 @@ log_error() {
 	logger -t "$NAME" -p daemon.err -- "$*"
 }
 
+log_warn() {
+	logger -t "$NAME" -p daemon.warn -- "$*"
+}
+
 normalize_stream_fps() {
 	local value="$1"
 
@@ -353,7 +357,7 @@ prepare_data_dir() {
 			if [ "$existed" -eq 0 ] &&
 			   ! repair_directory_metadata "$d" "$NESD_UID" "$NESD_GID" \
 				nesd:nesd; then
-				log_error "cannot apply nesd ownership/mode to new external directory: $d;" \
+				log_warn "cannot apply nesd ownership/mode to new external directory: $d;" \
 					"filesystems such as vfat/exfat cannot store them," \
 					"checking effective access instead"
 			fi

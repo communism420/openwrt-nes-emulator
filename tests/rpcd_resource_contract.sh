@@ -298,6 +298,40 @@ extract_function json_dump_without_upload_fd |
 	grep -Fq '7>&- 8>&- 9>&-' ||
 	fail "json_dump_without_upload_fd does not close all lock descriptors"
 
+new_token_source="$(extract_function new_token)"
+validate_token_parent_source="$(extract_function validate_token_parent)"
+read_auth_token_source="$(extract_function read_auth_token)"
+write_auth_token_source="$(extract_function write_auth_token)"
+remove_legacy_token_source="$(extract_function remove_legacy_token)"
+printf '%s\n' "$new_token_source" | grep -Fq 'exec 7>&- 8>&- 9>&-' ||
+	fail "new_token lets hexdump inherit request locks"
+printf '%s\n' "$validate_token_parent_source" |
+	grep -Fq 'exec 7>&- 8>&- 9>&-' ||
+	fail "validate_token_parent lets readlink inherit request locks"
+[ "$(printf '%s\n' "$read_auth_token_source" |
+	grep -Fc 'exec 7>&- 8>&- 9>&-')" -ge 3 ] ||
+	fail "read_auth_token lets a cat/wc/tr child inherit request locks"
+printf '%s\n' "$write_auth_token_source" |
+	grep -Fq 'exec 7>&- 8>&- 9>&-' ||
+	fail "write_auth_token lets mktemp inherit request locks"
+for child in chown chmod mv rm; do
+	printf '%s\n' "$write_auth_token_source" |
+		grep -Eq "[[:space:]]$child .*7>&- 8>&- 9>&-" ||
+		fail "write_auth_token lets $child inherit request locks"
+done
+[ "$(printf '%s\n' "$remove_legacy_token_source" |
+	grep -Fc '7>&- 8>&- 9>&-')" -ge 3 ] ||
+	fail "remove_legacy_token lets a uci child inherit request locks"
+[ "$(grep -Fc 'token="$(new_token 7>&- 8>&- 9>&-)"' "$RPCD")" -eq 2 ] ||
+	fail "a new_token command-substitution shell inherits request locks"
+rotate_token_source="$(extract_function rotate_token)"
+printf '%s\n' "$rotate_token_source" |
+	grep -Fq 'uci -q get nes-emulator.main.enabled 2>/dev/null' ||
+	fail "rotate_token no longer checks the enabled state"
+printf '%s\n' "$rotate_token_source" |
+	grep -Fq 'exec 7>&- 8>&- 9>&-' ||
+	fail "rotate_token lets its enabled-state lookup inherit the startup lock"
+
 # `ensure_auth_token` may create a genuinely absent token, but must fail closed
 # for every existing entry whose content or metadata was rejected.
 ensure_source="$(extract_function ensure_auth_token)"

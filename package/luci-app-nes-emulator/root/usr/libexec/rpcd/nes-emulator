@@ -169,8 +169,10 @@ token_is_valid() {
 new_token() {
 	local token
 
-	token="$(hexdump -v -n 32 -e '1/1 "%02x"' \
-		/dev/urandom 2>/dev/null)" || return 1
+	token="$(
+		exec 7>&- 8>&- 9>&-
+		hexdump -v -n 32 -e '1/1 "%02x"' /dev/urandom 2>/dev/null
+	)" || return 1
 	[ "${#token}" -eq 64 ] || return 1
 	printf '%s' "$token"
 }
@@ -180,7 +182,10 @@ validate_token_parent() {
 
 	load_service_nesd_gid || return 1
 	[ -d "$directory" ] && [ ! -L "$directory" ] || return 1
-	resolved="$(readlink -f "$directory" 2>/dev/null)" || return 1
+	resolved="$(
+		exec 7>&- 8>&- 9>&-
+		readlink -f "$directory" 2>/dev/null
+	)" || return 1
 	[ "$resolved" = "$directory" ] || return 1
 	validate_directory_metadata "$directory" drwxr-x--- 0 \
 		"$SERVICE_NESD_GID"
@@ -192,10 +197,19 @@ read_auth_token() {
 	load_service_nesd_gid || return 1
 	validate_regular_metadata "$TOKEN_FILE" -rw-r----- 0 \
 		"$SERVICE_NESD_GID" || return 1
-	token="$(cat "$TOKEN_FILE" 2>/dev/null)" || return 1
+	token="$(
+		exec 7>&- 8>&- 9>&-
+		cat "$TOKEN_FILE" 2>/dev/null
+	)" || return 1
 	token_is_valid "$token" || return 1
-	bytes="$(wc -c <"$TOKEN_FILE" 2>/dev/null | tr -d ' ')"
-	lines="$(wc -l <"$TOKEN_FILE" 2>/dev/null | tr -d ' ')"
+	bytes="$(
+		exec 7>&- 8>&- 9>&-
+		wc -c <"$TOKEN_FILE" 2>/dev/null | tr -d ' '
+	)"
+	lines="$(
+		exec 7>&- 8>&- 9>&-
+		wc -l <"$TOKEN_FILE" 2>/dev/null | tr -d ' '
+	)"
 	[ "$lines" = 1 ] &&
 		[ "$bytes" -eq $((${#token} + 1)) ] 2>/dev/null || return 1
 	AUTH_TOKEN="$token"
@@ -211,13 +225,16 @@ write_auth_token() {
 		validate_regular_metadata "$TOKEN_FILE" -rw-r----- 0 \
 			"$SERVICE_NESD_GID" || return 1
 	fi
-	temporary="$(mktemp "${TOKEN_FILE}.tmp.XXXXXX" 2>/dev/null)" ||
+	temporary="$(
+		exec 7>&- 8>&- 9>&-
+		mktemp "${TOKEN_FILE}.tmp.XXXXXX" 2>/dev/null
+	)" ||
 		return 1
 	if ! printf '%s\n' "$token" >"$temporary" ||
-	   ! chown root:nesd "$temporary" 2>/dev/null ||
-	   ! chmod 0640 "$temporary" 2>/dev/null ||
-	   ! mv -f "$temporary" "$TOKEN_FILE"; then
-		rm -f "$temporary"
+	   ! chown root:nesd "$temporary" 2>/dev/null 7>&- 8>&- 9>&- ||
+	   ! chmod 0640 "$temporary" 7>&- 8>&- 9>&- ||
+	   ! mv -f "$temporary" "$TOKEN_FILE" 7>&- 8>&- 9>&-; then
+		rm -f "$temporary" 7>&- 8>&- 9>&-
 		return 1
 	fi
 	return 0
@@ -340,10 +357,11 @@ acquire_start_lock() {
 }
 
 remove_legacy_token() {
-	uci -q get nes-emulator.main.auth_token >/dev/null 2>&1 ||
+	uci -q get nes-emulator.main.auth_token \
+		>/dev/null 2>&1 7>&- 8>&- 9>&- ||
 		return 0
-	uci -q delete nes-emulator.main.auth_token &&
-		uci -q commit nes-emulator &&
+	uci -q delete nes-emulator.main.auth_token 7>&- 8>&- 9>&- &&
+		uci -q commit nes-emulator 7>&- 8>&- 9>&- &&
 		validate_config_file
 }
 
@@ -355,7 +373,7 @@ ensure_auth_token() {
 	if read_auth_token; then
 		token="$AUTH_TOKEN"
 	elif [ ! -e "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; then
-		token="$(new_token)"
+		token="$(new_token 7>&- 8>&- 9>&-)"
 		if [ "${#token}" -ne 64 ] ||
 		   ! write_auth_token "$token" ||
 		   ! remove_legacy_token; then
@@ -405,7 +423,7 @@ rotate_token() {
 		json_error "authentication token is busy"
 		return
 	}
-	token="$(new_token)"
+	token="$(new_token 7>&- 8>&- 9>&-)"
 	if [ "${#token}" -ne 64 ] ||
 	   ! write_auth_token "$token" ||
 	   ! remove_legacy_token; then
@@ -424,7 +442,10 @@ rotate_token() {
 		was_running=1
 	fi
 	if [ "$was_running" -eq 1 ]; then
-		enabled="$(uci -q get nes-emulator.main.enabled 2>/dev/null)"
+		enabled="$(
+			exec 7>&- 8>&- 9>&-
+			uci -q get nes-emulator.main.enabled 2>/dev/null
+		)"
 		case "$enabled" in
 		1|on|true|yes|enabled)
 			/etc/init.d/nes-emulator restart >/dev/null 2>&1 9>&- 7>&-

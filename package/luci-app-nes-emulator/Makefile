@@ -38,6 +38,8 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DATA) ./root/usr/share/rpcd/acl.d/*.json $(1)/usr/share/rpcd/acl.d/
 
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/nes-emulator
+	$(INSTALL_DATA) ./htdocs/luci-static/resources/nes-emulator.js \
+		$(1)/www/luci-static/resources/nes-emulator.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/nes-emulator/*.js \
 		$(1)/www/luci-static/resources/view/nes-emulator/
 

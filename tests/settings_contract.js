@@ -18,12 +18,35 @@ const source = fs.readFileSync(path.join(
 	'package/luci-app-nes-emulator/htdocs/luci-static/resources/view/' +
 		'nes-emulator/settings.js'
 ), 'utf8');
+const sharedSource = fs.readFileSync(path.join(
+	root,
+	'package/luci-app-nes-emulator/htdocs/luci-static/resources/' +
+		'nes-emulator.js'
+), 'utf8');
 
 const renderedOptions = [];
 const rotateCalls = [];
 const notifications = [];
 const luci = { env: { rpctimeout: 29 } };
 let rotateThrowsSynchronously = false;
+const rpc = {
+	declare: specification => () => {
+		rotateCalls.push({
+			method: specification.method,
+			rpcTimeout: luci.env.rpctimeout,
+			nobatch: specification.nobatch === true
+		});
+		if (rotateThrowsSynchronously)
+			throw new Error('synchronous rotate failure');
+		return Promise.resolve({ ok: true });
+	}
+};
+const sharedFactory = new Function('baseclass', 'rpc', 'L', sharedSource);
+const nesEmulator = sharedFactory(
+	{ extend: value => value },
+	rpc,
+	luci
+);
 
 class MockOption {
 	constructor(type, name, title, description) {
@@ -78,23 +101,13 @@ const form = {
 };
 
 const factory = new Function(
-	'view', 'form', 'rpc', 'ui', 'E', '_', 'L',
+	'view', 'form', 'nesEmulator', 'ui', 'E', '_', 'L',
 	source
 );
 const component = factory(
 	{ extend: value => value },
 	form,
-	{
-		declare: specification => () => {
-			rotateCalls.push({
-				method: specification.method,
-				rpcTimeout: luci.env.rpctimeout
-			});
-			if (rotateThrowsSynchronously)
-				throw new Error('synchronous rotate failure');
-			return Promise.resolve({ ok: true });
-		}
-	},
+	nesEmulator,
 	{
 		showModal: () => {},
 		hideModal: () => {},
@@ -200,14 +213,16 @@ if (primary.validate('main', '') === true)
 	if (rotateCalls.length !== 1 ||
 	    rotateCalls[0].method !== 'rotate_token' ||
 	    rotateCalls[0].rpcTimeout !== 120 ||
+	    !rotateCalls[0].nobatch ||
 	    luci.env.rpctimeout !== 29) {
-		throw new Error('token rotation lacks a restored 120-second RPC timeout');
+		throw new Error('token rotation lacks an isolated 120-second RPC timeout');
 	}
 
 	rotateThrowsSynchronously = true;
 	await rotate.onclick();
 	if (rotateCalls.length !== 2 ||
 	    rotateCalls[1].rpcTimeout !== 120 ||
+	    !rotateCalls[1].nobatch ||
 	    luci.env.rpctimeout !== 29 ||
 	    !notifications.some(item => item.level === 'error')) {
 		throw new Error('synchronous rotation failure leaked the RPC timeout');

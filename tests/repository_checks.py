@@ -78,6 +78,16 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def shell_function(source: str, name: str) -> str:
+    match = re.search(
+        rf"^{re.escape(name)}\(\) \{{\n.*?^\}}$",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    require(match is not None, f"missing shell function {name}")
+    return match.group(0)
+
+
 def check_publication_surface() -> None:
     readme = read("README.md")
     apk_version = f"{VERSION}-r{PACKAGE_RELEASE}"
@@ -1296,6 +1306,10 @@ def check_security_regressions() -> None:
         "package/luci-app-nes-emulator/htdocs/luci-static/resources/view/"
         "nes-emulator/settings.js"
     )
+    shared_luci = read(
+        "package/luci-app-nes-emulator/htdocs/luci-static/resources/"
+        "nes-emulator.js"
+    )
     main_source = read("package/nes-emulator/src/main.c")
     http_source = read("package/nes-emulator/src/http.c")
     http_header = read("package/nes-emulator/src/http.h")
@@ -1359,7 +1373,10 @@ def check_security_regressions() -> None:
         and rpcd.index(
             'elif [ ! -e "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; then'
         )
-        < rpcd.index('token="$(new_token)"', rpcd.index("ensure_auth_token()")),
+        < rpcd.index(
+            'token="$(new_token 7>&- 8>&- 9>&-)"',
+            rpcd.index("ensure_auth_token()"),
+        ),
         "rpcd mutates unsafe token metadata or cannot restore a missing token",
     )
     require(
@@ -1555,19 +1572,31 @@ def check_security_regressions() -> None:
         "nes-emulator/play.js"
     )
     require(
-        "const LONG_RUNNING_RPC_TIMEOUT = 120;" in overview
-        and "const LONG_RUNNING_RPC_TIMEOUT = 120;" in play_view
-        and "const LONG_RUNNING_RPC_TIMEOUT = 120;" in settings
-        and "const callLoad = declareLongRunningRpc({" in overview
-        and "const callImport = declareLongRunningRpc({" in overview
-        and "const callStart = declareLongRunningRpc({" in overview
-        and "const callAccess = declareLongRunningRpc({" in play_view
-        and "const callRotateToken = declareLongRunningRpc({" in settings
-        and "L.env.rpctimeout = savedTimeout;" in overview
-        and "L.env.rpctimeout = savedTimeout;" in play_view
-        and "L.env.rpctimeout = savedTimeout;" in settings
+        "const LONG_RUNNING_RPC_TIMEOUT = 120;" in shared_luci
+        and "const LONG_RUNNING_ACTION_GRACE = 5;" in shared_luci
+        and "function getRpcTimeout()" in shared_luci
+        and "function getActionTimeout()" in shared_luci
+        and "function declareLongRunningRpc(specification)" in shared_luci
+        and "Object.assign({}, specification" in shared_luci
+        and "nobatch: true" in shared_luci
+        and "L.env.rpctimeout = savedTimeout;" in shared_luci
+        and all(
+            "'require nes-emulator as nesEmulator';" in view_source
+            for view_source in (overview, play_view, settings)
+        )
+        and "const callLoad = nesEmulator.declareLongRunningRpc({" in overview
+        and "const callImport = nesEmulator.declareLongRunningRpc({" in overview
+        and "const callStart = nesEmulator.declareLongRunningRpc({" in overview
+        and "const callAccess = nesEmulator.declareLongRunningRpc({" in play_view
+        and "const callRotateToken = nesEmulator.declareLongRunningRpc({" in settings
+        and all(
+            "LONG_RUNNING_RPC_TIMEOUT" not in view_source
+            and "function declareLongRunningRpc" not in view_source
+            for view_source in (overview, play_view, settings)
+        )
+        and overview.count("nesEmulator.getActionTimeout()") == 2
         and "withTimeout(action(), timeoutMs)" in overview
-        and overview.count("LONG_RUNNING_ACTION_TIMEOUT") >= 3
+        and "LONG_RUNNING_ACTION_TIMEOUT" not in overview
         and "withTimeout(callReserveUpload(), 20000)" in overview
         and "withTimeout(callRoms(), 15000)" in overview
         and "const result = await callImport(" in overview
@@ -1611,6 +1640,9 @@ def check_security_regressions() -> None:
         and 'if [ "$existed" -eq 0 ] &&' in init
         and "filesystems such as vfat/exfat cannot store them" in init
         and "checking effective access instead" in init
+        and "log_warn()" in init
+        and '-p daemon.warn -- "$*"' in init
+        and 'log_warn "cannot apply nesd ownership/mode' in init
         and 'prepare_data_dir "$system_dir" read' in init
         and "external data path lacks $access access for nesd" in init
         and "uid $NESD_UID, primary gid $NESD_GID, groups $NESD_GROUPS" in init
@@ -2245,7 +2277,28 @@ def check_security_regressions() -> None:
         "json_load_without_upload_fd" in rpcd
         and "json_dump_without_upload_fd" in rpcd
         and "fd 8 the token flock" in rpcd
-        and rpcd.count("exec 7>&- 8>&- 9>&-") >= 3
+        and all(
+            "7>&- 8>&- 9>&-" in shell_function(rpcd, helper)
+            for helper in (
+                "new_token",
+                "validate_token_parent",
+                "read_auth_token",
+                "write_auth_token",
+                "remove_legacy_token",
+            )
+        )
+        and shell_function(rpcd, "read_auth_token").count(
+            "exec 7>&- 8>&- 9>&-"
+        )
+        >= 3
+        and shell_function(rpcd, "remove_legacy_token").count(
+            "7>&- 8>&- 9>&-"
+        )
+        >= 3
+        and rpcd.count('token="$(new_token 7>&- 8>&- 9>&-)"') == 2
+        and "uci -q get nes-emulator.main.enabled 2>/dev/null"
+        in shell_function(rpcd, "rotate_token")
+        and "exec 7>&- 8>&- 9>&-" in shell_function(rpcd, "rotate_token")
         and "-w 7>&- 8>&- 9>&-" in rpcd
         and rpcd.count("exec 9>&-") >= 15
         and rpcd.count('2>/dev/null 9>&- &') >= 3
@@ -2815,6 +2868,15 @@ def check_upstream_export_contract() -> None:
         and "apk --update-cache --wait 120 add luci-base rpcd jshn jsonfilter cgi-io"
         in installer,
         "standalone exact-version or direct-runtime dependency semantics changed",
+    )
+    require(
+        "./htdocs/luci-static/resources/nes-emulator.js" in standalone_luci
+        and "$(1)/www/luci-static/resources/nes-emulator.js" in standalone_luci
+        and '"$LUCI_DIR/htdocs/luci-static/resources/nes-emulator.js"'
+        in build_script
+        and '"$LUCI_ROOT/www/luci-static/resources/nes-emulator.js"'
+        in build_script,
+        "standalone LuCI packages omit the shared RPC helper",
     )
 
     for marker in (

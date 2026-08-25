@@ -140,7 +140,10 @@ external_data_dir_is_usable_by_nesd() {
 }
 # Invoked indirectly by the extracted directory function evaluated above.
 # shellcheck disable=SC2317
-log_error() { printf '%s\n' "$*"; }
+log_error() { printf 'error:%s\n' "$*"; }
+# Invoked indirectly by the extracted directory function evaluated above.
+# shellcheck disable=SC2317
+log_warn() { printf 'warn:%s\n' "$*"; }
 
 vfat_log="$TMP/vfat.log"
 (
@@ -148,10 +151,13 @@ vfat_log="$TMP/vfat.log"
 	prepare_data_dir "$TMP/vfat/roms" write
 ) >"$vfat_log" 2>&1 ||
 	fail "metadata-only failure rejected an effectively writable external directory"
-grep -Fq "cannot apply nesd ownership/mode to new external directory" "$vfat_log" ||
+grep -Fq "warn:cannot apply nesd ownership/mode to new external directory" "$vfat_log" ||
 	fail "best-effort external metadata failure was not logged"
 grep -Fq "checking effective access instead" "$vfat_log" ||
 	fail "external metadata warning does not explain the fallback check"
+if grep -Fq "error:" "$vfat_log"; then
+	fail "recoverable external metadata failure was logged as an error"
+fi
 
 denied_log="$TMP/denied.log"
 if (
@@ -160,7 +166,7 @@ if (
 ) >"$denied_log" 2>&1; then
 	fail "an effectively unwritable external directory was accepted"
 fi
-grep -Fq "external data path lacks write/search access for nesd" "$denied_log" ||
+grep -Fq "error:external data path lacks write/search access for nesd" "$denied_log" ||
 	fail "failed fallback access check did not retain its actionable diagnostic"
 
 grep -Fq "prepare_data_dir \"\$system_dir\" read" "$INIT" ||
@@ -171,6 +177,10 @@ grep -Fq "external data path lacks \$access access for nesd" "$INIT" ||
 	fail "external-directory failures do not identify the missing access"
 grep -Fq "(uid \$NESD_UID, primary gid \$NESD_GID, groups \$NESD_GROUPS): \$d;" "$INIT" ||
 	fail "external-directory failures do not report the nesd uid and gid"
+grep -Fq "logger -t \"\$NAME\" -p daemon.warn -- \"\$*\"" "$INIT" ||
+	fail "recoverable external metadata failures do not use daemon.warn"
+grep -Fq "logger -t \"\$NAME\" -p daemon.err -- \"\$*\"" "$INIT" ||
+	fail "hard init failures no longer use daemon.err"
 
 # Both writers of auth.token must share a root-only runtime lock. The lock file
 # is created without following pre-existing links, reopened without truncation,

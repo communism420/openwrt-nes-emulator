@@ -41,6 +41,7 @@ if command -v node >/dev/null 2>&1; then
 	node tests/luci_rpc_contract.js
 	node tests/play_lifecycle_contract.js
 	node tests/settings_contract.js
+	node --check package/luci-app-nes-emulator/htdocs/luci-static/resources/nes-emulator.js
 	for file in package/luci-app-nes-emulator/htdocs/luci-static/resources/view/nes-emulator/*.js; do
 		node --check "$file"
 	done

@@ -200,6 +200,7 @@ def check_clean_export(output: Path) -> None:
     )
     native_init = native / "files/nes-emulator.init"
     native_config = native / "files/nes-emulator.config"
+    luci_shared_resource = luci / "htdocs/luci-static/resources/nes-emulator.js"
     source_config = (
         ROOT / "package/nes-emulator/files/nes-emulator.config"
     ).read_text(encoding="utf-8")
@@ -212,6 +213,15 @@ def check_clean_export(output: Path) -> None:
         native_init.read_bytes()
         == (ROOT / "package/nes-emulator/files/nes-emulator.init").read_bytes(),
         "native export does not expose the exact reviewed init payload",
+    )
+    require(
+        luci_shared_resource.read_bytes()
+        == (
+            ROOT
+            / "package/luci-app-nes-emulator/htdocs/luci-static/resources/"
+            "nes-emulator.js"
+        ).read_bytes(),
+        "LuCI export does not expose the exact shared RPC helper",
     )
     require(
         source_config.count(migration_default) == 1

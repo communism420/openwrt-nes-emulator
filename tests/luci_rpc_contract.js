@@ -14,6 +14,11 @@ const playSource = fs.readFileSync(path.join(
 	'package/luci-app-nes-emulator/htdocs/luci-static/resources/view/' +
 		'nes-emulator/play.js'
 ), 'utf8');
+const sharedSource = fs.readFileSync(path.join(
+	root,
+	'package/luci-app-nes-emulator/htdocs/luci-static/resources/' +
+		'nes-emulator.js'
+), 'utf8');
 
 if (typeof String.prototype.format !== 'function') {
 	Object.defineProperty(String.prototype, 'format', {
@@ -81,7 +86,8 @@ const rpc = {
 			calls.push({
 				method,
 				args,
-				rpcTimeout: luci.env.rpctimeout
+				rpcTimeout: luci.env.rpctimeout,
+				nobatch: specification.nobatch === true
 			});
 			const configured = responses[method];
 			const response = typeof configured === 'function'
@@ -94,6 +100,12 @@ const rpc = {
 		};
 	}
 };
+const sharedFactory = new Function('baseclass', 'rpc', 'L', sharedSource);
+const nesEmulator = sharedFactory(
+	{ extend: value => value },
+	rpc,
+	luci
+);
 
 const nodes = new Map();
 let actionButtons = [];
@@ -143,7 +155,7 @@ function E(tag, attributes, children) {
 
 const factory = new Function(
 	'view', 'rpc', 'ui', 'E', '_', 'L', 'window', 'document',
-	'requestAnimationFrame',
+	'requestAnimationFrame', 'nesEmulator',
 	source
 );
 const component = factory(
@@ -161,7 +173,8 @@ const component = factory(
 	luci,
 	{ location: { protocol: 'http:', hostname: '192.168.1.1' } },
 	documentMock,
-	() => 0
+	() => 0,
+	nesEmulator
 );
 
 function deferred() {
@@ -179,9 +192,28 @@ function serializedNotification(notification) {
 }
 
 (async () => {
+	if (nesEmulator.getActionTimeout() !== 125000)
+		throw new Error('default long-running action timeout is inconsistent');
+	luci.env.rpctimeout = 180;
+	const customTimeoutCall = nesEmulator.declareLongRunningRpc({
+		object: 'nes-emulator',
+		method: 'status',
+		expect: { '': {} }
+	});
+	await customTimeoutCall();
+	if (nesEmulator.getActionTimeout() !== 185000 ||
+	    calls[0].rpcTimeout !== 180 || !calls[0].nobatch ||
+	    luci.env.rpctimeout !== 180) {
+		throw new Error('custom RPC timeout exceeds the local action guard');
+	}
+	calls.length = 0;
+	luci.env.rpctimeout = 23;
+
 	const access = await component.load();
-	if (calls[0].rpcTimeout !== 23 || luci.env.rpctimeout !== 23)
+	if (calls[0].rpcTimeout !== 23 || calls[0].nobatch ||
+	    luci.env.rpctimeout !== 23) {
 		throw new Error('ordinary RPC call changed the global timeout');
+	}
 	actionButtons = [
 		actionButton('start'),
 		actionButton('pause'),
@@ -287,9 +319,9 @@ function serializedNotification(notification) {
 	const importCall = partialCalls.find(call =>
 		call.method === 'nes-emulator.import'
 	);
-	if (!importCall || importCall.rpcTimeout !== 120 ||
+	if (!importCall || importCall.rpcTimeout !== 120 || !importCall.nobatch ||
 	    luci.env.rpctimeout !== 23) {
-		throw new Error('ROM import lacks a restored 120-second RPC timeout');
+		throw new Error('ROM import lacks an isolated 120-second RPC timeout');
 	}
 	if (partialCalls.some(call =>
 		call.method === 'nes-emulator.discard_upload')) {
@@ -388,7 +420,8 @@ function serializedNotification(notification) {
 	await component.onLoad(romPath);
 	const loadCall = calls.find(call => call.method === 'nes-emulator.load');
 	if (!loadCall || loadCall.args[0] !== romPath ||
-	    loadCall.rpcTimeout !== 120 || luci.env.rpctimeout !== 23) {
+	    loadCall.rpcTimeout !== 120 || !loadCall.nobatch ||
+	    luci.env.rpctimeout !== 23) {
 		throw new Error('ROM path with spaces was not passed intact to RPC');
 	}
 
@@ -404,9 +437,9 @@ function serializedNotification(notification) {
 	const startCall = calls.slice(startCallOffset).find(call =>
 		call.method === 'nes-emulator.start'
 	);
-	if (!startCall || startCall.rpcTimeout !== 120 ||
+	if (!startCall || startCall.rpcTimeout !== 120 || !startCall.nobatch ||
 	    luci.env.rpctimeout !== 23) {
-		throw new Error('daemon start lacks a restored 120-second RPC timeout');
+		throw new Error('daemon start lacks an isolated 120-second RPC timeout');
 	}
 
 	responses['session.access'] = { access: false };
@@ -456,12 +489,12 @@ function serializedNotification(notification) {
 		}
 	};
 	const playFactory = new Function(
-		'view', 'rpc', 'E', '_', 'L', 'window', 'document',
+		'view', 'nesEmulator', 'E', '_', 'L', 'window', 'document',
 		playSource
 	);
 	const playComponent = playFactory(
 		{ extend: value => value },
-		rpc,
+		nesEmulator,
 		E,
 		value => value,
 		luci,
@@ -478,8 +511,9 @@ function serializedNotification(notification) {
 		call.method === 'nes-emulator.access'
 	);
 	if (!playLoadCall || playLoadCall.rpcTimeout !== 120 ||
+	    !playLoadCall.nobatch ||
 	    luci.env.rpctimeout !== 23) {
-		throw new Error('Play access lacks a restored 120-second RPC timeout');
+		throw new Error('Play access lacks an isolated 120-second RPC timeout');
 	}
 	const failedPlay = JSON.stringify(playComponent.render(failedAccess));
 	if (!failedPlay.includes('nesd could not be started') ||
@@ -502,7 +536,7 @@ function serializedNotification(notification) {
 	const retryCall = calls.filter(call =>
 		call.method === 'nes-emulator.access'
 	).at(-1);
-	if (!retryCall || retryCall.rpcTimeout !== 120 ||
+	if (!retryCall || retryCall.rpcTimeout !== 120 || !retryCall.nobatch ||
 	    luci.env.rpctimeout !== 23) {
 		throw new Error('Play retry did not preserve its extended RPC timeout');
 	}
@@ -551,7 +585,7 @@ function serializedNotification(notification) {
 
 	const httpsPlayComponent = playFactory(
 		{ extend: value => value },
-		rpc,
+		nesEmulator,
 		E,
 		value => value,
 		luci,
@@ -593,7 +627,8 @@ function serializedNotification(notification) {
 		luci,
 		{ location: { protocol: 'https:', hostname: 'fd00::1' } },
 		documentMock,
-		() => 0
+		() => 0,
+		nesEmulator
 	);
 	const httpsOverview = JSON.stringify(
 		httpsOverviewComponent.render({ access: true })

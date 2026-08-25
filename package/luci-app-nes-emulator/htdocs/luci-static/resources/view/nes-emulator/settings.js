@@ -1,30 +1,10 @@
 'use strict';
 'require view';
 'require form';
-'require rpc';
 'require ui';
+'require nes-emulator as nesEmulator';
 
-const LONG_RUNNING_RPC_TIMEOUT = 120;
-
-function declareLongRunningRpc(specification) {
-	const call = rpc.declare(specification);
-
-	return (...args) => {
-		const savedTimeout = L.env.rpctimeout;
-		L.env.rpctimeout = Math.max(
-			Number(savedTimeout) || 20,
-			LONG_RUNNING_RPC_TIMEOUT
-		);
-		try {
-			return call(...args);
-		}
-		finally {
-			L.env.rpctimeout = savedTimeout;
-		}
-	};
-}
-
-const callRotateToken = declareLongRunningRpc({
+const callRotateToken = nesEmulator.declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'rotate_token',
 	expect: { '': {} }

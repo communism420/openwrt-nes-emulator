@@ -2201,6 +2201,7 @@ mkdir -p \
 	"$LUCI_ROOT/usr/share/rpcd/acl.d" \
 	"$LUCI_ROOT/usr/libexec/rpcd" \
 	"$LUCI_ROOT/usr/share/licenses/luci-app-nes-emulator" \
+	"$LUCI_ROOT/www/luci-static/resources" \
 	"$LUCI_ROOT/www/luci-static/resources/view/nes-emulator" \
 	"$LUCI_ROOT/lib/apk/packages"
 install -m 0644 "$LUCI_DIR/root/usr/share/luci/menu.d/"*.json \
@@ -2209,6 +2210,8 @@ install -m 0644 "$LUCI_DIR/root/usr/share/rpcd/acl.d/"*.json \
 	"$LUCI_ROOT/usr/share/rpcd/acl.d/"
 install -m 0755 "$LUCI_DIR/root/usr/libexec/rpcd/nes-emulator" \
 	"$LUCI_ROOT/usr/libexec/rpcd/nes-emulator"
+install -m 0644 "$LUCI_DIR/htdocs/luci-static/resources/nes-emulator.js" \
+	"$LUCI_ROOT/www/luci-static/resources/nes-emulator.js"
 install -m 0644 "$LUCI_DIR/htdocs/luci-static/resources/view/nes-emulator/"*.js \
 	"$LUCI_ROOT/www/luci-static/resources/view/nes-emulator/"
 install -m 0644 "$LUCI_DIR/files/LICENSE-MIT" \

@@ -2,28 +2,7 @@
 'require view';
 'require rpc';
 'require ui';
-
-const LONG_RUNNING_RPC_TIMEOUT = 120;
-const LONG_RUNNING_ACTION_TIMEOUT =
-	(LONG_RUNNING_RPC_TIMEOUT + 5) * 1000;
-
-function declareLongRunningRpc(specification) {
-	const call = rpc.declare(specification);
-
-	return (...args) => {
-		const savedTimeout = L.env.rpctimeout;
-		L.env.rpctimeout = Math.max(
-			Number(savedTimeout) || 20,
-			LONG_RUNNING_RPC_TIMEOUT
-		);
-		try {
-			return call(...args);
-		}
-		finally {
-			L.env.rpctimeout = savedTimeout;
-		}
-	};
-}
+'require nes-emulator as nesEmulator';
 
 const callCanControl = rpc.declare({
 	object: 'session',
@@ -44,14 +23,14 @@ const callRoms = rpc.declare({
 	expect: { '': { roms: [] } }
 });
 
-const callLoad = declareLongRunningRpc({
+const callLoad = nesEmulator.declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'load',
 	params: [ 'path' ],
 	expect: { '': {} }
 });
 
-const callImport = declareLongRunningRpc({
+const callImport = nesEmulator.declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'import',
 	params: [ 'staged', 'name' ],
@@ -71,7 +50,7 @@ const callDiscardUpload = rpc.declare({
 	expect: { '': {} }
 });
 
-const callStart = declareLongRunningRpc({
+const callStart = nesEmulator.declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'start',
 	expect: { '': {} }
@@ -397,7 +376,7 @@ return view.extend({
 		await this.runAction(
 			() => callLoad(path),
 			_('Loaded %s').format(path),
-			LONG_RUNNING_ACTION_TIMEOUT
+			nesEmulator.getActionTimeout()
 		);
 	},
 
@@ -469,7 +448,7 @@ return view.extend({
 		return this.runAction(
 			callStart,
 			_('Emulation started'),
-			LONG_RUNNING_ACTION_TIMEOUT
+			nesEmulator.getActionTimeout()
 		);
 	},
 

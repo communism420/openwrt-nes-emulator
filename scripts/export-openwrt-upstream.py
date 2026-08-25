@@ -417,6 +417,7 @@ def validate_luci_tree(
     )
 
     required = (
+        "htdocs/luci-static/resources/nes-emulator.js",
         "htdocs/luci-static/resources/view/nes-emulator/overview.js",
         "htdocs/luci-static/resources/view/nes-emulator/play.js",
         "htdocs/luci-static/resources/view/nes-emulator/settings.js",
