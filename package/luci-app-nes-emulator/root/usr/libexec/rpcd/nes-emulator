@@ -38,14 +38,14 @@ META_NLINK=''
 META_UID=''
 META_GID=''
 
-# fd 9 owns the upload flock and fd 7 owns the startup flock. Keep both in this
-# rpcd shell only: no command-substitution shell, service process or external
-# jshn process may keep either lock alive after this request exits.
+# fd 9 owns the upload flock, fd 8 the token flock and fd 7 the startup flock.
+# Keep all three in this rpcd shell only: no command-substitution shell, service
+# process or external jshn process may keep a lock alive after this request exits.
 json_load_without_upload_fd() {
 	local statements
 
 	statements="$(
-		exec 7>&- 9>&-
+		exec 7>&- 8>&- 9>&-
 		jshn -r "$1"
 	)" || return 1
 	eval "$statements"
@@ -53,14 +53,14 @@ json_load_without_upload_fd() {
 
 json_dump_without_upload_fd() {
 	jshn ${JSON_PREFIX:+-p "$JSON_PREFIX"} \
-		${JSON_NONEWLINE:+-n} ${JSON_INDENT:+-i} -w 7>&- 9>&-
+		${JSON_NONEWLINE:+-n} ${JSON_INDENT:+-i} -w 7>&- 8>&- 9>&-
 }
 
 read_metadata() {
 	local path="$1" metadata
 
 	metadata="$(
-		exec 7>&- 9>&-
+		exec 7>&- 8>&- 9>&-
 		LC_ALL=C ls -ldn "$path" 2>/dev/null
 	)" || return 1
 	case "$metadata" in
@@ -137,7 +137,7 @@ prepare_lock_file() {
 load_service_nesd_gid() {
 	[ -n "$SERVICE_NESD_GID" ] && return 0
 	SERVICE_NESD_GID="$(
-		exec 9>&-
+		exec 7>&- 8>&- 9>&-
 		id -g nesd 2>/dev/null
 	)" || SERVICE_NESD_GID=
 	case "$SERVICE_NESD_GID" in
@@ -248,7 +248,7 @@ acquire_token_lock() {
 			exec 8>&-
 			return 1
 		fi
-		sleep 1
+		sleep 1 9>&- 8>&- 7>&-
 	done
 	TOKEN_LOCK_HELD=1
 	trap 'release_all_locks' 0
@@ -391,8 +391,9 @@ rotate_token() {
 		json_error "authentication token directory metadata is unsafe"
 		return
 	}
-	# Including the pre-dispatch token check, these budgets allow at most
-	# seven one-second sleeps, comfortably below LuCI's 20-second RPC timeout.
+	# Including the pre-dispatch token check, the RPCD lock phase allows at
+	# most seven one-second sleeps. A native restart has its own bounded token
+	# lock, so LuCI gives the complete non-cancellable operation a longer budget.
 	acquire_start_lock "$ROTATE_START_LOCK_MAX_ATTEMPTS" || {
 		json_error "another NES Emulator startup operation is still in progress; retry shortly"
 		return

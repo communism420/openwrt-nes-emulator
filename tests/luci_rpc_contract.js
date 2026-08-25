@@ -50,6 +50,10 @@ const responses = {
 };
 const calls = [];
 const notifications = [];
+const luci = {
+	env: { rpctimeout: 23 },
+	url: value => '/' + value
+};
 let uploadedFile = {
 	name: 'Super Mario Bros.nes'
 };
@@ -76,7 +80,8 @@ const rpc = {
 				specification.object + '.' + specification.method;
 			calls.push({
 				method,
-				args
+				args,
+				rpcTimeout: luci.env.rpctimeout
 			});
 			const configured = responses[method];
 			const response = typeof configured === 'function'
@@ -153,7 +158,7 @@ const component = factory(
 	},
 	E,
 	value => value,
-	{ url: value => '/' + value },
+	luci,
 	{ location: { protocol: 'http:', hostname: '192.168.1.1' } },
 	documentMock,
 	() => 0
@@ -175,6 +180,8 @@ function serializedNotification(notification) {
 
 (async () => {
 	const access = await component.load();
+	if (calls[0].rpcTimeout !== 23 || luci.env.rpctimeout !== 23)
+		throw new Error('ordinary RPC call changed the global timeout');
 	actionButtons = [
 		actionButton('start'),
 		actionButton('pause'),
@@ -277,6 +284,13 @@ function serializedNotification(notification) {
 	const partialCallStart = calls.length;
 	await component.onUpload();
 	const partialCalls = calls.slice(partialCallStart);
+	const importCall = partialCalls.find(call =>
+		call.method === 'nes-emulator.import'
+	);
+	if (!importCall || importCall.rpcTimeout !== 120 ||
+	    luci.env.rpctimeout !== 23) {
+		throw new Error('ROM import lacks a restored 120-second RPC timeout');
+	}
 	if (partialCalls.some(call =>
 		call.method === 'nes-emulator.discard_upload')) {
 		throw new Error('stored ROM upload reservation was discarded again');
@@ -373,8 +387,27 @@ function serializedNotification(notification) {
 	const romPath = '/etc/nes-emulator/roms/Super Mario Bros.nes';
 	await component.onLoad(romPath);
 	const loadCall = calls.find(call => call.method === 'nes-emulator.load');
-	if (!loadCall || loadCall.args[0] !== romPath)
+	if (!loadCall || loadCall.args[0] !== romPath ||
+	    loadCall.rpcTimeout !== 120 || luci.env.rpctimeout !== 23) {
 		throw new Error('ROM path with spaces was not passed intact to RPC');
+	}
+
+	component.lastStatus = {
+		game_loaded: true,
+		rom: 'new.nes',
+		running: false,
+		paused: false
+	};
+	responses['nes-emulator.start'] = { ok: true };
+	const startCallOffset = calls.length;
+	await component.onStart();
+	const startCall = calls.slice(startCallOffset).find(call =>
+		call.method === 'nes-emulator.start'
+	);
+	if (!startCall || startCall.rpcTimeout !== 120 ||
+	    luci.env.rpctimeout !== 23) {
+		throw new Error('daemon start lacks a restored 120-second RPC timeout');
+	}
 
 	responses['session.access'] = { access: false };
 	const readOnlyAccess = await component.load();
@@ -423,7 +456,7 @@ function serializedNotification(notification) {
 		}
 	};
 	const playFactory = new Function(
-		'view', 'rpc', 'E', '_', 'window', 'document',
+		'view', 'rpc', 'E', '_', 'L', 'window', 'document',
 		playSource
 	);
 	const playComponent = playFactory(
@@ -431,13 +464,24 @@ function serializedNotification(notification) {
 		rpc,
 		E,
 		value => value,
+		luci,
 		{ location: { protocol: 'http:', hostname: '192.168.1.1' } },
 		playDocument
 	);
-	const failedPlay = JSON.stringify(playComponent.render({
+	responses['nes-emulator.access'] = {
 		ok: false,
 		error: 'nesd could not be started'
-	}));
+	};
+	const playLoadOffset = calls.length;
+	const failedAccess = await playComponent.load();
+	const playLoadCall = calls.slice(playLoadOffset).find(call =>
+		call.method === 'nes-emulator.access'
+	);
+	if (!playLoadCall || playLoadCall.rpcTimeout !== 120 ||
+	    luci.env.rpctimeout !== 23) {
+		throw new Error('Play access lacks a restored 120-second RPC timeout');
+	}
+	const failedPlay = JSON.stringify(playComponent.render(failedAccess));
 	if (!failedPlay.includes('nesd could not be started') ||
 	    !failedPlay.includes('Retry') ||
 	    !failedPlay.includes('"data-nes-retry":"1"') ||
@@ -455,6 +499,13 @@ function serializedNotification(notification) {
 	const duplicateRetry = playComponent.onRetry();
 	if (retryAttempts !== 1)
 		throw new Error('concurrent Play retries started nesd more than once');
+	const retryCall = calls.filter(call =>
+		call.method === 'nes-emulator.access'
+	).at(-1);
+	if (!retryCall || retryCall.rpcTimeout !== 120 ||
+	    luci.env.rpctimeout !== 23) {
+		throw new Error('Play retry did not preserve its extended RPC timeout');
+	}
 	const busyPlay = JSON.stringify(
 		playDocument.getElementById('nes-play-access').children
 	);
@@ -503,6 +554,7 @@ function serializedNotification(notification) {
 		rpc,
 		E,
 		value => value,
+		luci,
 		{ location: { protocol: 'https:', hostname: 'fd00::1' } },
 		playDocument
 	);
@@ -538,7 +590,7 @@ function serializedNotification(notification) {
 		},
 		E,
 		value => value,
-		{ url: value => '/' + value },
+		luci,
 		{ location: { protocol: 'https:', hostname: 'fd00::1' } },
 		documentMock,
 		() => 0

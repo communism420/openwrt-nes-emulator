@@ -350,9 +350,12 @@ prepare_data_dir() {
 				nesd:nesd || return 1
 			;;
 		*)
-			if [ "$existed" -eq 0 ]; then
-				repair_directory_metadata "$d" "$NESD_UID" "$NESD_GID" \
-					nesd:nesd || return 1
+			if [ "$existed" -eq 0 ] &&
+			   ! repair_directory_metadata "$d" "$NESD_UID" "$NESD_GID" \
+				nesd:nesd; then
+				log_error "cannot apply nesd ownership/mode to new external directory: $d;" \
+					"filesystems such as vfat/exfat cannot store them," \
+					"checking effective access instead"
 			fi
 			if ! external_data_dir_is_usable_by_nesd "$d" "$required"; then
 				case "$required" in
@@ -437,7 +440,7 @@ acquire_token_lock() {
 			exec 8>&-
 			return 1
 		fi
-		sleep 1
+		sleep 1 8>&-
 	done
 	TOKEN_LOCK_HELD=1
 	trap 'release_token_lock' 0

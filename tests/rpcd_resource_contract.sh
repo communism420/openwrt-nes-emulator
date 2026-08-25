@@ -168,6 +168,10 @@ case "$token_lock_source" in
 	*'prepare_lock_file "$TOKEN_LOCK_FILE"'*'command exec 8<>"$TOKEN_LOCK_FILE"'*'validate_regular_metadata "$TOKEN_LOCK_FILE" -rw------- 0 0'*) ;;
 	*) fail "token lock lacks safe preparation, catchable open, or post-open validation" ;;
 esac
+case "$token_lock_source" in
+	*'sleep 1 9>&- 8>&- 7>&-'*) ;;
+	*) fail "token-lock wait lets a sleep child inherit a lock descriptor" ;;
+esac
 case "$upload_lock_source" in
 	*'prepare_lock_file "$UPLOAD_LOCK_FILE"'*'command exec 9<>"$UPLOAD_LOCK_FILE"'*'validate_regular_metadata "$UPLOAD_LOCK_FILE" -rw------- 0 0'*) ;;
 	*) fail "upload lock lacks safe preparation, catchable open, or post-open validation" ;;
@@ -273,13 +277,26 @@ esac
 	[ "$TOKEN_LOCK_MAX_ATTEMPTS" -eq "$token_lock_attempts" ]
 ) || fail "rpcd method listing unexpectedly inherited the rotation budget"
 
-# Keep both rotation token waits plus its startup-lock wait comfortably inside
-# LuCI's 20-second default RPC timeout.
+# The RPCD-side rotation phase has two token waits plus one startup-lock wait.
+# A native restart may add its separately bounded nine-sleep token wait; LuCI
+# therefore gives the complete operation an explicit extended client timeout.
 combined_rotate_sleeps=$((
 	(rotate_token_attempts - 1) * 2 + rotate_start_attempts - 1
 ))
 [ "$combined_rotate_sleeps" -eq 7 ] ||
-	fail "rotation lock waits no longer preserve the reviewed seven-second budget"
+	fail "RPCD rotation locks no longer preserve the reviewed seven-sleep budget"
+
+# External helpers must not retain any of the three request locks in their
+# command-substitution or jshn children.
+grep -Fq "fd 8 the token flock" "$RPCD" ||
+	fail "lock descriptor inventory omits the token flock"
+for helper in json_load_without_upload_fd read_metadata load_service_nesd_gid; do
+	extract_function "$helper" | grep -Fq 'exec 7>&- 8>&- 9>&-' ||
+		fail "$helper does not close all lock descriptors in its child"
+done
+extract_function json_dump_without_upload_fd |
+	grep -Fq '7>&- 8>&- 9>&-' ||
+	fail "json_dump_without_upload_fd does not close all lock descriptors"
 
 # `ensure_auth_token` may create a genuinely absent token, but must fail closed
 # for every existing entry whose content or metadata was rejected.

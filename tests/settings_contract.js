@@ -3,6 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 
+if (typeof String.prototype.format !== 'function') {
+	Object.defineProperty(String.prototype, 'format', {
+		value(...values) {
+			let index = 0;
+			return this.replace(/%s/g, () => String(values[index++]));
+		}
+	});
+}
+
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(
 	root,
@@ -11,6 +20,10 @@ const source = fs.readFileSync(path.join(
 ), 'utf8');
 
 const renderedOptions = [];
+const rotateCalls = [];
+const notifications = [];
+const luci = { env: { rpctimeout: 29 } };
+let rotateThrowsSynchronously = false;
 
 class MockOption {
 	constructor(type, name, title, description) {
@@ -65,16 +78,33 @@ const form = {
 };
 
 const factory = new Function(
-	'view', 'form', 'rpc', 'ui', 'E', '_',
+	'view', 'form', 'rpc', 'ui', 'E', '_', 'L',
 	source
 );
 const component = factory(
 	{ extend: value => value },
 	form,
-	{ declare: () => async () => ({}) },
-	{},
+	{
+		declare: specification => () => {
+			rotateCalls.push({
+				method: specification.method,
+				rpcTimeout: luci.env.rpctimeout
+			});
+			if (rotateThrowsSynchronously)
+				throw new Error('synchronous rotate failure');
+			return Promise.resolve({ ok: true });
+		}
+	},
+	{
+		showModal: () => {},
+		hideModal: () => {},
+		addNotification: (title, content, level) => {
+			notifications.push({ title, content, level });
+		}
+	},
 	() => ({}),
-	value => value
+	value => value,
+	luci
 );
 
 component.render();
@@ -164,4 +194,27 @@ const primary = option('rom_dir');
 if (primary.validate('main', '') === true)
 	throw new Error('the required primary ROM directory became optional');
 
-console.log('settings contract: OK');
+(async () => {
+	const rotate = option('_rotate_token');
+	await rotate.onclick();
+	if (rotateCalls.length !== 1 ||
+	    rotateCalls[0].method !== 'rotate_token' ||
+	    rotateCalls[0].rpcTimeout !== 120 ||
+	    luci.env.rpctimeout !== 29) {
+		throw new Error('token rotation lacks a restored 120-second RPC timeout');
+	}
+
+	rotateThrowsSynchronously = true;
+	await rotate.onclick();
+	if (rotateCalls.length !== 2 ||
+	    rotateCalls[1].rpcTimeout !== 120 ||
+	    luci.env.rpctimeout !== 29 ||
+	    !notifications.some(item => item.level === 'error')) {
+		throw new Error('synchronous rotation failure leaked the RPC timeout');
+	}
+
+	console.log('settings contract: OK');
+})().catch(error => {
+	console.error(error);
+	process.exitCode = 1;
+});

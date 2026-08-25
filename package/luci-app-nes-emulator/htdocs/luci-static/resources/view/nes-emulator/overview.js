@@ -3,6 +3,28 @@
 'require rpc';
 'require ui';
 
+const LONG_RUNNING_RPC_TIMEOUT = 120;
+const LONG_RUNNING_ACTION_TIMEOUT =
+	(LONG_RUNNING_RPC_TIMEOUT + 5) * 1000;
+
+function declareLongRunningRpc(specification) {
+	const call = rpc.declare(specification);
+
+	return (...args) => {
+		const savedTimeout = L.env.rpctimeout;
+		L.env.rpctimeout = Math.max(
+			Number(savedTimeout) || 20,
+			LONG_RUNNING_RPC_TIMEOUT
+		);
+		try {
+			return call(...args);
+		}
+		finally {
+			L.env.rpctimeout = savedTimeout;
+		}
+	};
+}
+
 const callCanControl = rpc.declare({
 	object: 'session',
 	method: 'access',
@@ -22,14 +44,14 @@ const callRoms = rpc.declare({
 	expect: { '': { roms: [] } }
 });
 
-const callLoad = rpc.declare({
+const callLoad = declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'load',
 	params: [ 'path' ],
 	expect: { '': {} }
 });
 
-const callImport = rpc.declare({
+const callImport = declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'import',
 	params: [ 'staged', 'name' ],
@@ -49,7 +71,7 @@ const callDiscardUpload = rpc.declare({
 	expect: { '': {} }
 });
 
-const callStart = rpc.declare({
+const callStart = declareLongRunningRpc({
 	object: 'nes-emulator',
 	method: 'start',
 	expect: { '': {} }
@@ -350,12 +372,12 @@ return view.extend({
 		this.syncActionButtons();
 	},
 
-	async runAction(action, successText) {
+	async runAction(action, successText, timeoutMs = 30000) {
 		if (this.actionBusy)
 			return;
 		this.setActionBusy(true);
 		try {
-			requireSuccess(await withTimeout(action(), 30000));
+			requireSuccess(await withTimeout(action(), timeoutMs));
 			if (successText) {
 				ui.addNotification(null, E('p', {}, successText), 'info');
 			}
@@ -374,7 +396,8 @@ return view.extend({
 			return;
 		await this.runAction(
 			() => callLoad(path),
-			_('Loaded %s').format(path)
+			_('Loaded %s').format(path),
+			LONG_RUNNING_ACTION_TIMEOUT
 		);
 	},
 
@@ -443,7 +466,11 @@ return view.extend({
 		if (!this.canControl ||
 		    !this.stateAllowsAction('start', this.lastStatus))
 			return Promise.resolve();
-		return this.runAction(callStart, _('Emulation started'));
+		return this.runAction(
+			callStart,
+			_('Emulation started'),
+			LONG_RUNNING_ACTION_TIMEOUT
+		);
 	},
 
 	onStop() {

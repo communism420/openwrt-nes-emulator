@@ -1550,8 +1550,24 @@ def check_security_regressions() -> None:
         and "status.fps ?" not in overview,
         "LuCI status confuses native emulation timing with media stream FPS",
     )
+    play_view = read(
+        "package/luci-app-nes-emulator/htdocs/luci-static/resources/view/"
+        "nes-emulator/play.js"
+    )
     require(
-        "withTimeout(action(), 30000)" in overview
+        "const LONG_RUNNING_RPC_TIMEOUT = 120;" in overview
+        and "const LONG_RUNNING_RPC_TIMEOUT = 120;" in play_view
+        and "const LONG_RUNNING_RPC_TIMEOUT = 120;" in settings
+        and "const callLoad = declareLongRunningRpc({" in overview
+        and "const callImport = declareLongRunningRpc({" in overview
+        and "const callStart = declareLongRunningRpc({" in overview
+        and "const callAccess = declareLongRunningRpc({" in play_view
+        and "const callRotateToken = declareLongRunningRpc({" in settings
+        and "L.env.rpctimeout = savedTimeout;" in overview
+        and "L.env.rpctimeout = savedTimeout;" in play_view
+        and "L.env.rpctimeout = savedTimeout;" in settings
+        and "withTimeout(action(), timeoutMs)" in overview
+        and overview.count("LONG_RUNNING_ACTION_TIMEOUT") >= 3
         and "withTimeout(callReserveUpload(), 20000)" in overview
         and "withTimeout(callRoms(), 15000)" in overview
         and "const result = await callImport(" in overview
@@ -1559,10 +1575,6 @@ def check_security_regressions() -> None:
         and "UPLOAD_LOCK_MAX_ATTEMPTS=3" in rpcd
         and 'if [ "$attempts" -ge "$UPLOAD_LOCK_MAX_ATTEMPTS" ]; then' in rpcd,
         "LuCI timeouts can abandon non-cancellable actions or upload reservations",
-    )
-    play_view = read(
-        "package/luci-app-nes-emulator/htdocs/luci-static/resources/view/"
-        "nes-emulator/play.js"
     )
     require(
         "const accessError = access.error || '';" in play_view
@@ -1596,6 +1608,9 @@ def check_security_regressions() -> None:
         and 'd???r?[xs]???)' in init
         and 'd??????r?[xt])' in init
         and 'if ! external_data_dir_is_usable_by_nesd "$d" "$required"' in init
+        and 'if [ "$existed" -eq 0 ] &&' in init
+        and "filesystems such as vfat/exfat cannot store them" in init
+        and "checking effective access instead" in init
         and 'prepare_data_dir "$system_dir" read' in init
         and "external data path lacks $access access for nesd" in init
         and "uid $NESD_UID, primary gid $NESD_GID, groups $NESD_GROUPS" in init
@@ -1610,6 +1625,8 @@ def check_security_regressions() -> None:
         and "matching read-only group" in init_resource_contract
         and "a root-only ancestor was accepted" in init_resource_contract
         and "searchable ancestors was rejected" in init_resource_contract
+        and "metadata-only failure rejected" in init_resource_contract
+        and "effectively unwritable external directory" in init_resource_contract
         and "world-writable directory" in init_resource_contract
         and "terminated the shell instead of returning an open failure"
         in init_resource_contract
@@ -2227,11 +2244,14 @@ def check_security_regressions() -> None:
     require(
         "json_load_without_upload_fd" in rpcd
         and "json_dump_without_upload_fd" in rpcd
+        and "fd 8 the token flock" in rpcd
+        and rpcd.count("exec 7>&- 8>&- 9>&-") >= 3
+        and "-w 7>&- 8>&- 9>&-" in rpcd
         and rpcd.count("exec 9>&-") >= 15
         and rpcd.count('2>/dev/null 9>&- &') >= 3
-        and "sleep 1 9>&-" in rpcd
+        and "sleep 1 9>&- 8>&- 7>&-" in rpcd
         and "sync 9>&-" in rpcd,
-        "a child process can inherit fd 9 and keep the upload flock alive",
+        "a child process can inherit a request lock and keep it alive",
     )
     require(
         "id -u nesd" in rpcd

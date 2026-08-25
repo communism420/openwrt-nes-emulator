@@ -121,6 +121,38 @@ external_data_dir_is_usable_by_nesd /mount/data read &&
 external_data_dir_is_usable_by_nesd /mount/data invalid &&
 	fail "an unknown external-directory access requirement was accepted"
 
+# Filesystems such as vfat/exfat can provide the requested uid/gid/mask at
+# mount time while rejecting chown/chmod. A new external directory must still
+# be accepted when its effective access is correct, and rejected actionably
+# when that final access check fails.
+eval "$(extract_function prepare_data_dir "$INIT")"
+vfat_log="$TMP/vfat.log"
+(
+	valid_data_dir() { return 0; }
+	repair_directory_metadata() { return 1; }
+	external_data_dir_is_usable_by_nesd() { return 0; }
+	log_error() { printf '%s\n' "$*"; }
+	prepare_data_dir "$TMP/vfat/roms" write
+) >"$vfat_log" 2>&1 ||
+	fail "metadata-only failure rejected an effectively writable external directory"
+grep -Fq "cannot apply nesd ownership/mode to new external directory" "$vfat_log" ||
+	fail "best-effort external metadata failure was not logged"
+grep -Fq "checking effective access instead" "$vfat_log" ||
+	fail "external metadata warning does not explain the fallback check"
+
+denied_log="$TMP/denied.log"
+if (
+	valid_data_dir() { return 0; }
+	repair_directory_metadata() { return 1; }
+	external_data_dir_is_usable_by_nesd() { return 1; }
+	log_error() { printf '%s\n' "$*"; }
+	prepare_data_dir "$TMP/denied/roms" write
+) >"$denied_log" 2>&1; then
+	fail "an effectively unwritable external directory was accepted"
+fi
+grep -Fq "external data path lacks write/search access for nesd" "$denied_log" ||
+	fail "failed fallback access check did not retain its actionable diagnostic"
+
 grep -Fq "prepare_data_dir \"\$system_dir\" read" "$INIT" ||
 	fail "system_dir does not request read-only external access"
 grep -Fq "if ! external_data_dir_is_usable_by_nesd \"\$d\" \"\$required\"" "$INIT" ||
@@ -168,6 +200,8 @@ for source in "$INIT" "$RPCD"; do
 			grep -Fq 'validate_token_lock_file || {'; then
 			fail "$source does not prepare and revalidate the token lock"
 		fi
+		printf '%s\n' "$lock_source" | grep -Fq 'sleep 1 8>&-' ||
+			fail "$source lets token-lock sleep inherit fd 8"
 		;;
 	"$RPCD")
 		if ! grep -Fq "validate_directory_metadata \"\$LOCK_DIR\" drwx------ 0 0" "$source" ||
