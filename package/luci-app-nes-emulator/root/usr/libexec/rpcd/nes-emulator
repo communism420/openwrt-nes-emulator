@@ -232,7 +232,7 @@ write_auth_token() {
 		return 1
 	if ! printf '%s\n' "$token" >"$temporary" ||
 	   ! chown root:nesd "$temporary" 2>/dev/null 7>&- 8>&- 9>&- ||
-	   ! chmod 0640 "$temporary" 7>&- 8>&- 9>&- ||
+	   ! chmod 0640 "$temporary" 2>/dev/null 7>&- 8>&- 9>&- ||
 	   ! mv -f "$temporary" "$TOKEN_FILE" 7>&- 8>&- 9>&-; then
 		rm -f "$temporary" 7>&- 8>&- 9>&-
 		return 1
@@ -373,7 +373,10 @@ ensure_auth_token() {
 	if read_auth_token; then
 		token="$AUTH_TOKEN"
 	elif [ ! -e "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; then
-		token="$(new_token 7>&- 8>&- 9>&-)"
+		token="$(
+			exec 7>&- 8>&- 9>&-
+			new_token
+		)"
 		if [ "${#token}" -ne 64 ] ||
 		   ! write_auth_token "$token" ||
 		   ! remove_legacy_token; then
@@ -423,7 +426,10 @@ rotate_token() {
 		json_error "authentication token is busy"
 		return
 	}
-	token="$(new_token 7>&- 8>&- 9>&-)"
+	token="$(
+		exec 7>&- 8>&- 9>&-
+		new_token
+	)"
 	if [ "${#token}" -ne 64 ] ||
 	   ! write_auth_token "$token" ||
 	   ! remove_legacy_token; then

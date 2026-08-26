@@ -319,12 +319,23 @@ for child in chown chmod mv rm; do
 		grep -Eq "[[:space:]]$child .*7>&- 8>&- 9>&-" ||
 		fail "write_auth_token lets $child inherit request locks"
 done
+printf '%s\n' "$write_auth_token_source" |
+	grep -Fq 'chmod 0640 "$temporary" 2>/dev/null 7>&- 8>&- 9>&-' ||
+	fail "write_auth_token exposes an expected chmod failure on rpcd stderr"
 [ "$(printf '%s\n' "$remove_legacy_token_source" |
 	grep -Fc '7>&- 8>&- 9>&-')" -ge 3 ] ||
 	fail "remove_legacy_token lets a uci child inherit request locks"
-[ "$(grep -Fc 'token="$(new_token 7>&- 8>&- 9>&-)"' "$RPCD")" -eq 2 ] ||
-	fail "a new_token command-substitution shell inherits request locks"
+ensure_auth_token_source="$(extract_function ensure_auth_token)"
 rotate_token_source="$(extract_function rotate_token)"
+for child_source in "$ensure_auth_token_source" "$rotate_token_source"; do
+	printf '%s\n' "$child_source" | awk '
+		/token="\$\($/ { state = 1; next }
+		state == 1 && /exec 7>&- 8>&- 9>&-/ { state = 2; next }
+		state == 2 && /new_token/ { state = 3; next }
+		state == 3 && /^[[:space:]]*\)"$/ { found = 1 }
+		END { exit !found }
+	' || fail "a new_token command-substitution shell inherits request locks"
+done
 printf '%s\n' "$rotate_token_source" |
 	grep -Fq 'uci -q get nes-emulator.main.enabled 2>/dev/null' ||
 	fail "rotate_token no longer checks the enabled state"

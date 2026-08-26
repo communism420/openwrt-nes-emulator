@@ -1374,7 +1374,7 @@ def check_security_regressions() -> None:
             'elif [ ! -e "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; then'
         )
         < rpcd.index(
-            'token="$(new_token 7>&- 8>&- 9>&-)"',
+            'token="$(\n\t\t\texec 7>&- 8>&- 9>&-\n\t\t\tnew_token\n\t\t)"',
             rpcd.index("ensure_auth_token()"),
         ),
         "rpcd mutates unsafe token metadata or cannot restore a missing token",
@@ -2295,7 +2295,14 @@ def check_security_regressions() -> None:
             "7>&- 8>&- 9>&-"
         )
         >= 3
-        and rpcd.count('token="$(new_token 7>&- 8>&- 9>&-)"') == 2
+        and 'chmod 0640 "$temporary" 2>/dev/null 7>&- 8>&- 9>&-'
+        in shell_function(rpcd, "write_auth_token")
+        and rpcd.count("new_token\n") == 2
+        and 'token="$(new_token' not in rpcd
+        and 'token="$(\n\t\t\texec 7>&- 8>&- 9>&-\n\t\t\tnew_token\n\t\t)"'
+        in shell_function(rpcd, "ensure_auth_token")
+        and 'token="$(\n\t\texec 7>&- 8>&- 9>&-\n\t\tnew_token\n\t)"'
+        in shell_function(rpcd, "rotate_token")
         and "uci -q get nes-emulator.main.enabled 2>/dev/null"
         in shell_function(rpcd, "rotate_token")
         and "exec 7>&- 8>&- 9>&-" in shell_function(rpcd, "rotate_token")
